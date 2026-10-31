@@ -1,0 +1,6 @@
+{
+  "name": "Lofi Wave",
+  "description": "Premium Native Android Music Player with Real-Time Live Lo-Fi Audio DSP Engine, 10-Band Equalizer, Background Playback, and AI Music Assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
