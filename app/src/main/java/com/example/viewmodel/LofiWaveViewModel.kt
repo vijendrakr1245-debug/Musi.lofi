@@ -623,7 +623,14 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     // =========================================================================
 
     fun setLiveLofiMode(enabled: Boolean) {
-        val updated = _dspParams.value.copy(isLiveLofiEnabled = enabled)
+        val current = _dspParams.value
+        val updated = if (enabled && (current.presetId == "original" || current.masterIntensity <= 0.01f)) {
+            val softDefault = BuiltInLofiPresets.ALL.firstOrNull { it.id == "soft_lofi" }?.parameters
+                ?: LofiDspParameters()
+            softDefault.copy(isLiveLofiEnabled = true, masterGainDb = current.masterGainDb)
+        } else {
+            current.copy(isLiveLofiEnabled = enabled)
+        }
         _dspParams.value = updated
         AudioEngineBridge.applyLofiParameters(updated)
         viewModelScope.launch {
@@ -631,18 +638,25 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
         }
         postBannerMessage(
             if (enabled) "Real-Time Live Lo-Fi Mode Active (${updated.presetName})"
-            else "Original Hi-Fi Mode Active (Lo-Fi DSP Bypassed)"
+            else "Original Hi-Fi Mode Active (All DSP Bypassed)"
         )
     }
 
     fun selectLofiPreset(preset: LofiPreset) {
-        val updated = preset.parameters.copy(isLiveLofiEnabled = true)
+        val isOriginalBypass = preset.id == "original"
+        val updated = preset.parameters.copy(
+            isLiveLofiEnabled = !isOriginalBypass && preset.parameters.isLiveLofiEnabled,
+            masterGainDb = _dspParams.value.masterGainDb
+        )
         _dspParams.value = updated
         AudioEngineBridge.applyLofiParameters(updated)
         viewModelScope.launch {
             prefsRepo.saveDspParameters(updated)
         }
-        postBannerMessage("Applied '${preset.name}' Real-Time DSP Preset")
+        postBannerMessage(
+            if (isOriginalBypass) "Original Mode Active (All DSP Effects Bypassed)"
+            else "Applied '${preset.name}' Real-Time DSP Preset"
+        )
     }
 
     fun updateDspParameter(transform: (LofiDspParameters) -> LofiDspParameters) {

@@ -696,14 +696,15 @@ fun LofiStudioScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
-                            val defaultPreset = BuiltInLofiPresets.ALL.first()
+                            val defaultPreset = BuiltInLofiPresets.ALL.first { it.id == "soft_lofi" }
                             onSelectPreset(defaultPreset)
                         },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.testTag("reset_to_default_button")
                     ) {
-                        Icon(Icons.Default.RestartAlt, contentDescription = "Reset", modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.RestartAlt, contentDescription = "Reset to Default", modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Reset", style = MaterialTheme.typography.labelSmall)
+                        Text("Reset Default", style = MaterialTheme.typography.labelSmall)
                     }
                     Button(
                         onClick = { showSaveDialog = true },
@@ -719,16 +720,56 @@ fun LofiStudioScreen(
             }
         }
 
-        // Master LIVE LO-FI ON/OFF Toggle
+        // Instant Original / Lo-Fi A-B Switch + Effects Bypass
         item {
-            HifiLofiModeToggleBanner(
-                dspParams = dspParams,
-                onToggleMode = onToggleLofiMode,
-                onOpenStudio = {}
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                HifiLofiModeToggleBanner(
+                    dspParams = dspParams,
+                    onToggleMode = onToggleLofiMode,
+                    onOpenStudio = {}
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val isBypassed = !dspParams.isLiveLofiEnabled || dspParams.presetId == "original"
+                    Button(
+                        onClick = { onToggleLofiMode(!dspParams.isLiveLofiEnabled) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (dspParams.isLiveLofiEnabled) ElectricPurple else StudioEmerald
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("ab_switch_original_lofi")
+                    ) {
+                        Text(
+                            text = if (dspParams.isLiveLofiEnabled) "A/B: LIVE LO-FI ON" else "A/B: ORIGINAL HI-FI",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = { onToggleLofiMode(isBypassed) },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("effects_bypass_toggle")
+                    ) {
+                        Text(
+                            text = if (isBypassed) "EFFECTS BYPASSED (OFF)" else "BYPASS ALL EFFECTS",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isBypassed) StudioEmerald else NeonCyan,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
         }
 
-        // Real-Time Visualizer + L/R VU & Gain Reduction Telemetry
+        // Real-Time Visualizer + Phase 6 Audio Quality Telemetry (Peak, RMS, Clipping, DC Offset, Balance, Underruns, Latency)
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 RealTimeAudioVisualizer(
@@ -747,50 +788,61 @@ fun LofiStudioScreen(
                         .fillMaxWidth()
                         .border(1.dp, SubtleBorder, RoundedCornerShape(12.dp))
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Text(
-                                text = "L/R OUTPUT RMS: ${String.format(Locale.US, "%.1f dB", visualizerSnapshot.peakDb)}",
+                                text = "PEAK: ${String.format(Locale.US, "%.1f dB", visualizerSnapshot.peakDb)} • CLIPS: ${visualizerSnapshot.clippingCount}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = NeonCyan
+                                color = if (visualizerSnapshot.clippingCount == 0) StudioEmerald else VinylRose
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(
-                                progress = { (visualizerSnapshot.rmsLeft * 2.2f).coerceIn(0.02f, 1f) },
-                                color = ElectricPurple,
-                                trackColor = DeepObsidian,
-                                modifier = Modifier
-                                    .fillMaxWidth(0.9f)
-                                    .height(5.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                text = "LATENCY: ${String.format(Locale.US, "%.1f ms", visualizerSnapshot.bufferLatencyMs)} • ${visualizerSnapshot.effectiveSampleRateHz} Hz",
+                                text = "LATENCY: ${String.format(Locale.US, "%.1f ms", visualizerSnapshot.bufferLatencyMs)} • UNDERRUNS: ${visualizerSnapshot.underrunCount}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = AnalogAmber
                             )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Text(
-                                text = if (dspParams.isLiveLofiEnabled) {
+                                text = "DC OFFSET: ${String.format(Locale.US, "%+.4f", visualizerSnapshot.dcOffsetLeft)} • BAL: ${String.format(Locale.US, "%+.1f dB", visualizerSnapshot.channelBalanceDb)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = NeonCyan
+                            )
+                            Text(
+                                text = if (dspParams.isLiveLofiEnabled && dspParams.presetId != "original") {
                                     "LPF ${visualizerSnapshot.activeLowPassHz}Hz • ${String.format(Locale.US, "%.1f-BIT", visualizerSnapshot.activeBitDepth)}"
                                 } else {
-                                    "HI-FI DIRECT BYPASS (16-BIT)"
+                                    "ORIGINAL HI-FI BYPASS (16-BIT)"
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (dspParams.isLiveLofiEnabled) StudioEmerald else TextSecondary
                             )
                         }
+                        LinearProgressIndicator(
+                            progress = { (visualizerSnapshot.rmsLeft * 2.2f).coerceIn(0.02f, 1f) },
+                            color = ElectricPurple,
+                            trackColor = DeepObsidian,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                        )
                     }
                 }
 
-                // Core Tri-Effect Quick Focus Audition Strip (Low-Pass, Bitcrusher, Vinyl Noise)
+                // Core Tri-Effect Quick Focus Audition Strip (Gentle Low-Pass, Anti-Aliased Bitcrusher, Subtle Vinyl)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -800,9 +852,10 @@ fun LofiStudioScreen(
                             onUpdateDsp {
                                 it.copy(
                                     isLiveLofiEnabled = true,
-                                    presetName = "Core: 950Hz Deep Low-Pass",
-                                    lowPassCutoffHz = 950f,
-                                    highFreqReductionDb = 8.0f
+                                    presetId = "custom_lpf",
+                                    presetName = "Warm 4.5kHz Low-Pass",
+                                    lowPassCutoffHz = 4500f,
+                                    highFreqReductionDb = 2.0f
                                 )
                             }
                         },
@@ -811,7 +864,7 @@ fun LofiStudioScreen(
                             .weight(1f)
                             .testTag("core_focus_lowpass_button")
                     ) {
-                        Text("950Hz Low-Pass", style = MaterialTheme.typography.labelSmall, color = NeonCyan, maxLines = 1)
+                        Text("4.5kHz Low-Pass", style = MaterialTheme.typography.labelSmall, color = NeonCyan, maxLines = 1)
                     }
 
                     OutlinedButton(
@@ -819,9 +872,10 @@ fun LofiStudioScreen(
                             onUpdateDsp {
                                 it.copy(
                                     isLiveLofiEnabled = true,
-                                    presetName = "Core: 8-Bit / 3.5x Bitcrush",
-                                    bitDepth = 8.0f,
-                                    sampleRateDivisor = 3.5f
+                                    presetId = "custom_bitcrush",
+                                    presetName = "12-Bit Vintage Sampler",
+                                    bitDepth = 12.0f,
+                                    sampleRateDivisor = 1.6f
                                 )
                             }
                         },
@@ -830,7 +884,7 @@ fun LofiStudioScreen(
                             .weight(1f)
                             .testTag("core_focus_bitcrusher_button")
                     ) {
-                        Text("8-Bit Crusher", style = MaterialTheme.typography.labelSmall, color = VinylRose, maxLines = 1)
+                        Text("12-Bit Sampler", style = MaterialTheme.typography.labelSmall, color = VinylRose, maxLines = 1)
                     }
 
                     OutlinedButton(
@@ -838,10 +892,11 @@ fun LofiStudioScreen(
                             onUpdateDsp {
                                 it.copy(
                                     isLiveLofiEnabled = true,
-                                    presetName = "Core: 33⅓ RPM Dusty Vinyl",
-                                    vinylCrackle = 0.72f,
-                                    vinylNoise = 0.64f,
-                                    wowFlutterDepth = 0.45f
+                                    presetId = "vinyl_classic",
+                                    presetName = "Vinyl Classic",
+                                    vinylCrackle = 0.16f,
+                                    vinylNoise = 0.14f,
+                                    wowFlutterDepth = 0.12f
                                 )
                             }
                         },
@@ -850,13 +905,13 @@ fun LofiStudioScreen(
                             .weight(1f)
                             .testTag("core_focus_vinyl_button")
                     ) {
-                        Text("33⅓ Vinyl Noise", style = MaterialTheme.typography.labelSmall, color = AnalogAmber, maxLines = 1)
+                        Text("Subtle Vinyl", style = MaterialTheme.typography.labelSmall, color = AnalogAmber, maxLines = 1)
                     }
                 }
             }
         }
 
-        // Preset Selector Carousel (12 Ready-to-Use + Custom Presets)
+        // Preset Selector Carousel (Original + Soft Lo-Fi + Deep Lo-Fi + Vinyl Classic + Rainy Night + Dreamy Lo-Fi + Cassette Tape + Custom)
         item {
             Column {
                 Text(
@@ -867,7 +922,11 @@ fun LofiStudioScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(presets, key = { it.id }) { preset ->
-                        val selected = dspParams.isLiveLofiEnabled && dspParams.presetId == preset.id
+                        val selected = if (preset.id == "original") {
+                            !dspParams.isLiveLofiEnabled || dspParams.presetId == "original"
+                        } else {
+                            dspParams.isLiveLofiEnabled && dspParams.presetId == preset.id
+                        }
                         Surface(
                             color = if (selected) ElectricPurple.copy(alpha = 0.28f) else ElevatedCharcoal,
                             shape = RoundedCornerShape(14.dp),
@@ -926,11 +985,11 @@ fun LofiStudioScreen(
             }
         }
 
-        // RACK 1: Master Macro Controls (Intensity, Bass, Treble, Vinyl, Reverb)
+        // RACK 1: Phase 5 Primary User Controls (Master Volume, Bass, Treble, Warmth, Noise, Reverb, Bitcrusher)
         item {
             StudioRackSection(
-                title = "1. MASTER MACRO CONTROLS",
-                subtitle = "Primary real-time Lo-Fi conversion intensity & tone balance"
+                title = "1. ESSENTIAL STUDIO CONTROLS",
+                subtitle = "Master volume, bass, treble, tape warmth, noise, reverb & anti-aliased bitcrusher"
             ) {
                 DspParameterSlider(
                     label = "Master Effect Intensity (Wet/Dry Mix)",
@@ -942,31 +1001,86 @@ fun LofiStudioScreen(
                     onValueChange = { v -> onUpdateDsp { it.copy(masterIntensity = v, isLiveLofiEnabled = true) } }
                 )
                 DspParameterSlider(
-                    label = "AudioEngine Master Output Gain",
+                    label = "Master Volume (Slewed Output Gain)",
                     valueText = String.format(Locale.US, "%+.1f dB", dspParams.masterGainDb),
                     value = dspParams.masterGainDb,
-                    valueRange = -12f..12f,
+                    valueRange = -12f..6f,
                     accentColor = StudioEmerald,
                     testTag = "slider_master_gain_db",
                     onValueChange = { v -> onUpdateDsp { it.copy(masterGainDb = v) } }
                 )
                 DspParameterSlider(
-                    label = "Warm Bass Enhancement (95Hz Shelf)",
+                    label = "Bass Control (Controlled 105Hz Shelf)",
                     valueText = String.format(Locale.US, "%+.1f dB", dspParams.warmBassBoostDb),
                     value = dspParams.warmBassBoostDb,
-                    valueRange = -6f..12f,
+                    valueRange = -6f..6f,
                     accentColor = ElectricPurple,
                     testTag = "slider_warm_bass",
-                    onValueChange = { v -> onUpdateDsp { it.copy(warmBassBoostDb = v) } }
+                    onValueChange = { v -> onUpdateDsp { it.copy(warmBassBoostDb = v, isLiveLofiEnabled = true) } }
                 )
                 DspParameterSlider(
-                    label = "Treble Adjustment",
+                    label = "Treble Control (4.5kHz High Shelf)",
                     valueText = String.format(Locale.US, "%+.1f dB", dspParams.trebleGainDb),
                     value = dspParams.trebleGainDb,
-                    valueRange = -12f..12f,
+                    valueRange = -8f..6f,
                     accentColor = ElectricPurple,
                     testTag = "slider_treble_gain",
-                    onValueChange = { v -> onUpdateDsp { it.copy(trebleGainDb = v) } }
+                    onValueChange = { v -> onUpdateDsp { it.copy(trebleGainDb = v, isLiveLofiEnabled = true) } }
+                )
+                DspParameterSlider(
+                    label = "Warmth Control (Analog Tape Saturation)",
+                    valueText = "${(dspParams.analogSaturation * 100).toInt()}%",
+                    value = dspParams.analogSaturation,
+                    valueRange = 0f..1f,
+                    accentColor = AnalogAmber,
+                    testTag = "slider_warmth_control",
+                    onValueChange = { v -> onUpdateDsp { it.copy(analogSaturation = v, isLiveLofiEnabled = true) } }
+                )
+                DspParameterSlider(
+                    label = "Noise Intensity (Subtle Vinyl & Tape Floor)",
+                    valueText = "${(dspParams.noiseIntensity * 100).toInt()}%",
+                    value = dspParams.noiseIntensity,
+                    valueRange = 0f..1f,
+                    accentColor = AnalogAmber,
+                    testTag = "slider_noise_intensity",
+                    onValueChange = { v ->
+                        onUpdateDsp {
+                            it.copy(
+                                vinylNoise = v,
+                                vinylCrackle = (v * 0.85f).coerceIn(0f, 1f),
+                                tapeHiss = (v * 0.35f).coerceIn(0f, 1f),
+                                isLiveLofiEnabled = true
+                            )
+                        }
+                    }
+                )
+                DspParameterSlider(
+                    label = "Reverb Intensity (Natural Stereo Room)",
+                    valueText = "${(dspParams.reverbMix * 100).toInt()}%",
+                    value = dspParams.reverbMix,
+                    valueRange = 0f..1f,
+                    accentColor = NeonCyan,
+                    testTag = "slider_reverb_intensity",
+                    onValueChange = { v -> onUpdateDsp { it.copy(reverbMix = v, isLiveLofiEnabled = true) } }
+                )
+                DspParameterSlider(
+                    label = "Bitcrusher Intensity (Anti-Aliased)",
+                    valueText = "${(dspParams.bitcrusherIntensity * 100).toInt()}%",
+                    value = dspParams.bitcrusherIntensity,
+                    valueRange = 0f..1f,
+                    accentColor = VinylRose,
+                    testTag = "slider_bitcrusher_intensity",
+                    onValueChange = { v ->
+                        val depth = (16.0f - v * 10.0f).coerceIn(6f, 16f)
+                        val divisor = (1.0f + v * 3.0f).coerceIn(1f, 4f)
+                        onUpdateDsp {
+                            it.copy(
+                                bitDepth = depth,
+                                sampleRateDivisor = divisor,
+                                isLiveLofiEnabled = true
+                            )
+                        }
+                    }
                 )
             }
         }

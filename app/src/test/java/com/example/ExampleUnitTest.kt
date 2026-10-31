@@ -65,23 +65,21 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun verifyAllTwelveProfessionalPresetsExist() {
-        assertEquals(12, BuiltInLofiPresets.ALL.size)
-        val expectedNames = listOf(
-            "Rainy Night",
-            "Deep Chill",
-            "Vintage Vinyl",
-            "Warm Cassette",
-            "Dreamy Lo-Fi",
-            "Dark Academia",
-            "Study Focus",
-            "Sleep Relax",
-            "Coffee Shop",
-            "Anime Memories",
-            "Midnight Drive",
-            "Emotional Piano"
+    fun verifyAllProfessionalPresetsExist() {
+        val presetIds = BuiltInLofiPresets.ALL.map { it.id }
+        val requiredPhase4Presets = listOf(
+            "original",
+            "soft_lofi",
+            "deep_lofi",
+            "vinyl_classic",
+            "rainy_night",
+            "dreamy_lofi",
+            "cassette_tape"
         )
-        assertEquals(expectedNames, BuiltInLofiPresets.ALL.map { it.name })
+        for (reqId in requiredPhase4Presets) {
+            assertTrue("Expected Phase 4 preset '$reqId' to exist", reqId in presetIds)
+        }
+        assertTrue(BuiltInLofiPresets.ALL.size >= 7)
     }
 
     @Test

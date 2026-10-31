@@ -13,6 +13,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import com.example.model.EqualizerState
 import com.example.model.LofiDspParameters
+import kotlin.math.abs
 
 /**
  * Singleton Audio Engine Bridge connecting the Foreground MediaSessionService,
@@ -67,18 +68,24 @@ object AudioEngineBridge {
         dspProcessor.updateDspParameters(params)
         pcmAudioEngine.setMasterGainDb(params.masterGainDb)
         val player = exoPlayerInstance ?: return
-        val speed = if (params.isLiveLofiEnabled) {
-            params.playbackSpeed.coerceIn(0.5f, 1.5f)
+
+        // Avoid unnecessary resampling and WSOLA time-stretching:
+        // Keep PlaybackParameters.DEFAULT (1.0f, 1.0f) unless the user explicitly adjusts playbackSpeed away from 1.0f.
+        // When playbackSpeed is adjusted, lock pitch == speed like a natural analog tape deck to avoid phasey WSOLA vocal artifacts.
+        val rawSpeed = if (params.isLiveLofiEnabled && params.presetId != "original") {
+            params.playbackSpeed.coerceIn(0.65f, 1.35f)
         } else {
             1.0f
         }
-        val pitch = if (params.isLiveLofiEnabled) {
-            (0.92f + (speed - 0.85f) * 0.65f).coerceIn(0.65f, 1.35f)
+        val effectiveSpeed = if (abs(rawSpeed - 1.0f) < 0.005f) 1.0f else rawSpeed
+        val targetPlaybackParams = if (effectiveSpeed == 1.0f) {
+            PlaybackParameters.DEFAULT
         } else {
-            1.0f
+            PlaybackParameters(effectiveSpeed, effectiveSpeed)
         }
-        if (player.playbackParameters.speed != speed || player.playbackParameters.pitch != pitch) {
-            player.playbackParameters = PlaybackParameters(speed, pitch)
+
+        if (player.playbackParameters != targetPlaybackParams) {
+            player.playbackParameters = targetPlaybackParams
         }
     }
 

@@ -8,10 +8,13 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -27,8 +30,8 @@ fun interface PcmFilterChainStage {
 
 /**
  * Native Kotlin AudioEngine backed by [AudioTrack] that handles raw 16-bit PCM byte buffers,
- * real-time frame-by-frame DSP processing, click-free slewed gain adjustments, and extensible
- * filter chain stages.
+ * DC offset removal, real-time frame-by-frame DSP processing, click-free slewed gain adjustments,
+ * true-peak limiting, and underrun/quality telemetry.
  */
 class AudioEngine(
     val sampleRate: Int = DEFAULT_SAMPLE_RATE,
@@ -60,7 +63,15 @@ class AudioEngine(
     @Volatile
     private var softClipEnabled: Boolean = true
 
+    @Volatile
+    private var dcBlockerEnabled: Boolean = false
+
     private var currentSlewedGain: Float = 1.0f
+    private var limiterEnvelope: Float = 1.0f
+
+    // 1st-order DC offset blocker state per channel
+    private val dcPrevIn = FloatArray(2)
+    private val dcPrevOut = FloatArray(2)
 
     // Telemetry metrics updated by the real-time DSP loop
     @Volatile
@@ -72,15 +83,36 @@ class AudioEngine(
         private set
 
     @Volatile
+    var lastPeakLevel: Float = 0f
+        private set
+
+    @Volatile
+    var lastDcOffsetLeft: Float = 0f
+        private set
+
+    @Volatile
+    var lastDcOffsetRight: Float = 0f
+        private set
+
+    @Volatile
+    var clippingCount: Int = 0
+        private set
+
+    @Volatile
+    var lastProcessingLatencyMs: Float = 0f
+        private set
+
+    @Volatile
     var processedFramesCount: Long = 0L
         private set
 
     private val filterStages = CopyOnWriteArrayList<PcmFilterChainStage>()
     private val scratchStereoFrame = FloatArray(2)
-    private var internalWorkBuffer = ByteArray(8192)
+    private var internalWorkBuffer = ByteArray(16384)
 
     /**
-     * Initializes and starts the underlying low-latency [AudioTrack] in streaming PCM mode.
+     * Initializes and starts the underlying [AudioTrack] in streaming PCM mode with a 4x safety
+     * buffer to prevent audio dropouts and buffer underruns.
      */
     @Synchronized
     fun start(): Boolean {
@@ -98,6 +130,9 @@ class AudioEngine(
             AudioFormat.ENCODING_PCM_16BIT
         ).coerceAtLeast(4096)
 
+        // 4x minimum buffer size (at least 16 KB) prevents underruns while keeping latency low
+        val targetBufferSizeBytes = (minBufSize * 4).coerceAtLeast(16384)
+
         return runCatching {
             val builder = AudioTrack.Builder()
                 .setAudioAttributes(
@@ -113,12 +148,8 @@ class AudioEngine(
                         .setChannelMask(channelMask)
                         .build()
                 )
-                .setBufferSizeInBytes(minBufSize)
+                .setBufferSizeInBytes(targetBufferSizeBytes)
                 .setTransferMode(AudioTrack.MODE_STREAM)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                builder.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-            }
 
             val track = builder.build()
             track.play()
@@ -133,7 +164,11 @@ class AudioEngine(
      */
     fun setMasterGainDb(gainDb: Float) {
         val clampedDb = gainDb.coerceIn(-24.0f, 12.0f)
-        targetMasterGain = 10.0.pow(clampedDb / 20.0).toFloat()
+        targetMasterGain = if (abs(clampedDb) < 0.01f) {
+            1.0f
+        } else {
+            10.0.pow(clampedDb / 20.0).toFloat()
+        }
     }
 
     /**
@@ -163,6 +198,17 @@ class AudioEngine(
         softClipEnabled = enabled
     }
 
+    fun setDcBlockerEnabled(enabled: Boolean) {
+        dcBlockerEnabled = enabled
+    }
+
+    fun getUnderrunCount(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            return runCatching { audioTrack?.underrunCount ?: 0 }.getOrDefault(0)
+        }
+        return 0
+    }
+
     /**
      * Appends a modular [PcmFilterChainStage] to the real-time DSP processing loop.
      */
@@ -178,14 +224,9 @@ class AudioEngine(
      * Core Real-Time DSP Processing Loop for raw 16-bit little-endian PCM byte buffers.
      *
      * Decodes 16-bit PCM frames into normalized [-1.0, 1.0] floating-point samples,
-     * applies click-free slewed gain adjustments, executes registered [PcmFilterChainStage]s,
-     * applies soft-clipping protection, and re-encodes back to 16-bit little-endian PCM bytes.
-     *
-     * @param inputPcm Raw 16-bit little-endian PCM byte array.
-     * @param offset Starting byte offset in [inputPcm].
-     * @param length Number of bytes to process (must be a multiple of frame size).
-     * @param outputPcm Destination byte array (may be the same array as [inputPcm] for in-place processing).
-     * @return Number of processed PCM bytes written to [outputPcm].
+     * removes DC offset if present, executes registered [PcmFilterChainStage]s,
+     * applies click-free slewed gain adjustments, applies true-peak limiting,
+     * and re-encodes back to rounded 16-bit little-endian PCM bytes.
      */
     fun processPcmBuffer(
         inputPcm: ByteArray,
@@ -193,24 +234,34 @@ class AudioEngine(
         length: Int = inputPcm.size - offset,
         outputPcm: ByteArray = inputPcm
     ): Int {
+        val startNs = System.nanoTime()
         val frameSize = BYTES_PER_SAMPLE * channelCount
         val validByteCount = (length / frameSize) * frameSize
         if (validByteCount <= 0) return 0
 
         val frameCount = validByteCount / frameSize
         val effectiveTargetGain = if (isMuted) 0.0f else targetMasterGain
-        val slewStep = 1.0f / (sampleRate * 0.015f) // 15ms zipper-free gain ramp
+        val slewStep = 1.0f / (sampleRate * 0.020f) // 20ms zipper-free gain ramp
+        val dcPoleR = (1.0f - (2.0 * PI * 18.0 / sampleRate.coerceAtLeast(8000))).toFloat().coerceIn(0.990f, 0.9995f)
         val lGain = targetLeftGain
         val rGain = targetRightGain
         val stagesCount = filterStages.size
+        val bypassDsp = stagesCount == 0 &&
+            !isMuted &&
+            abs(currentSlewedGain - 1.0f) < 0.0001f &&
+            abs(effectiveTargetGain - 1.0f) < 0.0001f &&
+            abs(lGain - 1.0f) < 0.0001f &&
+            abs(rGain - 1.0f) < 0.0001f
 
         var sumSqL = 0f
         var sumSqR = 0f
+        var sumL = 0f
+        var sumR = 0f
+        var maxPeak = 0f
         var byteIdx = offset
         var outIdx = if (outputPcm === inputPcm) offset else 0
 
         for (frame in 0 until frameCount) {
-            // Smoothly slew master gain per frame to prevent clicks/zipper noise
             if (currentSlewedGain < effectiveTargetGain) {
                 currentSlewedGain = min(effectiveTargetGain, currentSlewedGain + slewStep)
             } else if (currentSlewedGain > effectiveTargetGain) {
@@ -232,40 +283,69 @@ class AudioEngine(
                 sampleL
             }
 
-            // 1. Apply slewed master & per-channel gain adjustments
-            sampleL *= currentSlewedGain * lGain
-            sampleR *= currentSlewedGain * rGain
+            if (!bypassDsp) {
+                // 1. DC Offset Removal (when DSP or gain stages are active)
+                if (dcBlockerEnabled && stagesCount > 0) {
+                    val cleanL = sampleL - dcPrevIn[0] + dcPoleR * dcPrevOut[0]
+                    dcPrevIn[0] = sampleL
+                    dcPrevOut[0] = cleanL
+                    sampleL = cleanL
 
-            // 2. Execute registered DSP filter chain stages (Low-Pass, Bitcrusher, Vinyl Noise, etc.)
-            if (stagesCount > 0) {
-                scratchStereoFrame[0] = sampleL
-                scratchStereoFrame[1] = sampleR
-                for (s in 0 until stagesCount) {
-                    filterStages[s].processFrame(scratchStereoFrame, sampleRate)
+                    val cleanR = sampleR - dcPrevIn[1] + dcPoleR * dcPrevOut[1]
+                    dcPrevIn[1] = sampleR
+                    dcPrevOut[1] = cleanR
+                    sampleR = cleanR
                 }
-                sampleL = scratchStereoFrame[0]
-                sampleR = scratchStereoFrame[1]
+
+                // 2. Execute registered DSP filter chain stages
+                if (stagesCount > 0) {
+                    scratchStereoFrame[0] = sampleL
+                    scratchStereoFrame[1] = sampleR
+                    for (s in 0 until stagesCount) {
+                        filterStages[s].processFrame(scratchStereoFrame, sampleRate)
+                    }
+                    sampleL = scratchStereoFrame[0]
+                    sampleR = scratchStereoFrame[1]
+                }
+
+                // 3. Apply slewed master & per-channel gain adjustments
+                sampleL *= currentSlewedGain * lGain
+                sampleR *= currentSlewedGain * rGain
+
+                // 4. Envelope-tracked true-peak limiter + soft-knee ceiling
+                if (softClipEnabled) {
+                    val peak = max(abs(sampleL), abs(sampleR))
+                    val ceiling = 0.965f
+                    val targetLim = if (peak > ceiling) ceiling / peak else 1.0f
+                    if (targetLim < limiterEnvelope) {
+                        limiterEnvelope = targetLim
+                    } else {
+                        limiterEnvelope += 0.001f * (1.0f - limiterEnvelope)
+                    }
+                    sampleL = clampWithSoftKnee(sampleL * limiterEnvelope)
+                    sampleR = clampWithSoftKnee(sampleR * limiterEnvelope)
+                } else {
+                    sampleL = sampleL.coerceIn(-1.0f, 1.0f)
+                    sampleR = sampleR.coerceIn(-1.0f, 1.0f)
+                }
             }
 
-            // 3. Apply soft-clipping headroom limiter or hard clamp
-            if (softClipEnabled) {
-                sampleL = clampWithSoftKnee(sampleL)
-                sampleR = clampWithSoftKnee(sampleR)
-            } else {
-                sampleL = sampleL.coerceIn(-1.0f, 1.0f)
-                sampleR = sampleR.coerceIn(-1.0f, 1.0f)
-            }
+            val framePeak = max(abs(sampleL), abs(sampleR))
+            if (framePeak > maxPeak) maxPeak = framePeak
+            if (framePeak >= 0.999f) clippingCount++
 
             sumSqL += sampleL * sampleL
             sumSqR += sampleR * sampleR
+            sumL += sampleL
+            sumR += sampleR
 
-            // Re-encode normalized float back to 16-bit little-endian PCM bytes
-            val outShortL = (sampleL * 32767.0f).toInt().coerceIn(-32768, 32767).toShort().toInt()
+            // Re-encode normalized float back to rounded 16-bit little-endian PCM bytes
+            val outShortL = (sampleL * 32767.0f).roundToInt().coerceIn(-32768, 32767).toShort().toInt()
             outputPcm[outIdx] = (outShortL and 0xFF).toByte()
             outputPcm[outIdx + 1] = ((outShortL shr 8) and 0xFF).toByte()
 
             if (channelCount >= 2) {
-                val outShortR = (sampleR * 32767.0f).toInt().coerceIn(-32768, 32767).toShort().toInt()
+                val outShortR = (sampleR * 32767.0f).roundToInt().coerceIn(-32768, 32767).toShort().toInt()
                 outputPcm[outIdx + 2] = (outShortR and 0xFF).toByte()
                 outputPcm[outIdx + 3] = ((outShortR shr 8) and 0xFF).toByte()
             }
@@ -276,9 +356,43 @@ class AudioEngine(
 
         lastRmsLeft = sqrt(sumSqL / frameCount).coerceIn(0f, 1f)
         lastRmsRight = sqrt(sumSqR / frameCount).coerceIn(0f, 1f)
+        lastPeakLevel = maxPeak.coerceIn(0f, 1f)
+        lastDcOffsetLeft = sumL / frameCount
+        lastDcOffsetRight = sumR / frameCount
+        lastProcessingLatencyMs = (System.nanoTime() - startNs) / 1_000_000f
         processedFramesCount += frameCount
 
         return validByteCount
+    }
+
+    /**
+     * Returns a complete [AudioQualityReport] from the most recently processed buffer.
+     */
+    fun getLatestQualityReport(lastBufferBytes: Int = 4096): AudioQualityReport {
+        val frames = (lastBufferBytes / (BYTES_PER_SAMPLE * channelCount)).coerceAtLeast(1)
+        val bufferDurationMs = (frames.toFloat() / sampleRate.coerceAtLeast(8000)) * 1000f
+        val rmsComb = sqrt((lastRmsLeft * lastRmsLeft + lastRmsRight * lastRmsRight) * 0.5f)
+        val rmsDb = if (rmsComb > 0.00001f) 20f * log10(rmsComb) else -96f
+        val peakDb = if (lastPeakLevel > 0.00001f) 20f * log10(lastPeakLevel) else -96f
+        val balDb = if (lastRmsLeft > 0.0001f && lastRmsRight > 0.0001f) {
+            20f * log10(lastRmsLeft / lastRmsRight)
+        } else {
+            0f
+        }
+        return AudioQualityReport(
+            peakLevelLinear = lastPeakLevel,
+            peakLevelDb = peakDb,
+            rmsLeftLinear = lastRmsLeft,
+            rmsRightLinear = lastRmsRight,
+            rmsCombinedDb = rmsDb,
+            clippingCount = clippingCount,
+            dcOffsetLeft = lastDcOffsetLeft,
+            dcOffsetRight = lastDcOffsetRight,
+            channelBalanceDb = balDb,
+            underrunCount = getUnderrunCount(),
+            processingLatencyMs = lastProcessingLatencyMs,
+            bufferDurationMs = bufferDurationMs
+        )
     }
 
     /**
@@ -315,10 +429,10 @@ class AudioEngine(
 
     private fun clampWithSoftKnee(x: Float): Float {
         val absX = abs(x)
-        if (absX <= 0.85f) return x
+        if (absX <= 0.90f) return x
         val sign = if (x >= 0f) 1f else -1f
-        val excess = absX - 0.85f
-        return sign * (0.85f + 0.15f * (excess / (0.15f + excess)))
+        val excess = absX - 0.90f
+        return sign * (0.90f + 0.065f * (excess / (0.065f + excess)))
     }
 
     @Synchronized
@@ -330,6 +444,9 @@ class AudioEngine(
 
     @Synchronized
     fun flush() {
+        dcPrevIn.fill(0f)
+        dcPrevOut.fill(0f)
+        limiterEnvelope = 1.0f
         runCatching {
             audioTrack?.flush()
         }
