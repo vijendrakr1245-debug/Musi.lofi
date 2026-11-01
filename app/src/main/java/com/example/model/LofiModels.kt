@@ -698,6 +698,99 @@ object BuiltInLofiPresets {
                 trebleGainDb = -1.2f,
                 playbackSpeed = 1.0f
             )
+        ),
+        LofiPreset(
+            id = "balanced_lofi",
+            name = "Balanced Lo-Fi",
+            subtitle = "Articulate rhythmic punch, clear 9.2kHz low-pass & controlled analog warmth for energetic tracks",
+            moodCategory = "Energetic & Balanced",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                presetId = "balanced_lofi",
+                presetName = "Balanced Lo-Fi",
+                masterIntensity = 0.68f,
+                lowPassCutoffHz = 9200f,
+                highPassCutoffHz = 30f,
+                bitDepth = 16.0f,
+                sampleRateDivisor = 1.0f,
+                analogSaturation = 0.16f,
+                vinylCrackle = 0.04f,
+                vinylNoise = 0.05f,
+                tapeHiss = 0.02f,
+                wowFlutterDepth = 0.06f,
+                wowFlutterRateHz = 0.95f,
+                warmBassBoostDb = 1.6f,
+                softDistortion = 0.0f,
+                reverbMix = 0.10f,
+                reverbRoomSize = 0.54f,
+                stereoWidth = 1.06f,
+                softCompression = 0.12f,
+                highFreqReductionDb = 0.8f,
+                trebleGainDb = -0.4f,
+                playbackSpeed = 1.0f
+            )
+        ),
+        LofiPreset(
+            id = "soft_ambient",
+            name = "Soft Ambient",
+            subtitle = "Serene stereo room space, gentle 5.6kHz filter & whisper-quiet vinyl air for peaceful listening",
+            moodCategory = "Peaceful & Serene",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                presetId = "soft_ambient",
+                presetName = "Soft Ambient",
+                masterIntensity = 0.74f,
+                lowPassCutoffHz = 5600f,
+                highPassCutoffHz = 28f,
+                bitDepth = 16.0f,
+                sampleRateDivisor = 1.0f,
+                analogSaturation = 0.14f,
+                vinylCrackle = 0.04f,
+                vinylNoise = 0.06f,
+                tapeHiss = 0.03f,
+                wowFlutterDepth = 0.09f,
+                wowFlutterRateHz = 0.80f,
+                warmBassBoostDb = 1.4f,
+                softDistortion = 0.0f,
+                reverbMix = 0.24f,
+                reverbRoomSize = 0.72f,
+                stereoWidth = 1.15f,
+                softCompression = 0.10f,
+                highFreqReductionDb = 1.8f,
+                trebleGainDb = -1.2f,
+                playbackSpeed = 1.0f
+            )
+        ),
+        LofiPreset(
+            id = "warm_lofi",
+            name = "Warm Lo-Fi",
+            subtitle = "Golden harmonic tape warmth, lively midrange clarity & gentle analog groove for upbeat songs",
+            moodCategory = "Happy & Warm",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                presetId = "warm_lofi",
+                presetName = "Warm Lo-Fi",
+                masterIntensity = 0.72f,
+                lowPassCutoffHz = 8200f,
+                highPassCutoffHz = 32f,
+                bitDepth = 16.0f,
+                sampleRateDivisor = 1.0f,
+                analogSaturation = 0.22f,
+                vinylCrackle = 0.06f,
+                vinylNoise = 0.06f,
+                tapeHiss = 0.03f,
+                wowFlutterDepth = 0.08f,
+                wowFlutterRateHz = 1.00f,
+                warmBassBoostDb = 1.7f,
+                softDistortion = 0.0f,
+                reverbMix = 0.14f,
+                reverbRoomSize = 0.58f,
+                stereoWidth = 1.08f,
+                softCompression = 0.12f,
+                highFreqReductionDb = 1.0f,
+                trebleGainDb = -0.6f,
+                playbackSpeed = 1.0f
+            )
         )
     )
 
@@ -791,3 +884,108 @@ object BuiltInLofiPresets {
         )
     )
 }
+
+/**
+ * The 7 supported moods for On-Device AI Music Mood Detection.
+ * Maps each detected musical mood to a primary and secondary Lo-Fi preset.
+ */
+enum class DetectedMusicMood(
+    val displayName: String,
+    val emoji: String,
+    val subtitle: String,
+    val primaryPresetId: String,
+    val primaryPresetLabel: String,
+    val secondaryPresetId: String
+) {
+    HAPPY(
+        displayName = "Happy",
+        emoji = "😊",
+        subtitle = "Bright harmonic energy, uplifting tempo & warm midrange presence",
+        primaryPresetId = "warm_lofi",
+        primaryPresetLabel = "Warm Lo-Fi",
+        secondaryPresetId = "coffee_shop"
+    ),
+    SAD(
+        displayName = "Sad",
+        emoji = "💔",
+        subtitle = "Slow tempo, subdued high frequencies & intimate dynamic contour",
+        primaryPresetId = "rainy_night",
+        primaryPresetLabel = "Rainy Night",
+        secondaryPresetId = "emotional_piano"
+    ),
+    ROMANTIC(
+        displayName = "Romantic",
+        emoji = "❤️",
+        subtitle = "Rich harmonic midrange, smooth sustained chords & gentle stereo warmth",
+        primaryPresetId = "dreamy_lofi",
+        primaryPresetLabel = "Dreamy",
+        secondaryPresetId = "vinyl_classic"
+    ),
+    RELAXING(
+        displayName = "Relaxing",
+        emoji = "🌙",
+        subtitle = "Laid-back tempo, warm low-mid foundation & smooth high-frequency roll-off",
+        primaryPresetId = "soft_lofi",
+        primaryPresetLabel = "Soft Lo-Fi",
+        secondaryPresetId = "deep_chill"
+    ),
+    ENERGETIC(
+        displayName = "Energetic",
+        emoji = "⚡",
+        subtitle = "Driving rhythmic pulse, crisp transient attacks & high dynamic energy",
+        primaryPresetId = "balanced_lofi",
+        primaryPresetLabel = "Balanced Lo-Fi",
+        secondaryPresetId = "midnight_drive"
+    ),
+    PEACEFUL(
+        displayName = "Peaceful",
+        emoji = "🍃",
+        subtitle = "Soft transient density, gentle acoustic dynamics & tranquil tonal balance",
+        primaryPresetId = "soft_ambient",
+        primaryPresetLabel = "Soft Ambient",
+        secondaryPresetId = "sleep_relax"
+    ),
+    DREAMY(
+        displayName = "Dreamy",
+        emoji = "✨",
+        subtitle = "Spacious stereo width, shimmering upper harmonics & floating rhythm",
+        primaryPresetId = "dreamy_lofi",
+        primaryPresetLabel = "Dreamy Lo-Fi",
+        secondaryPresetId = "anime_memories"
+    )
+}
+
+@Immutable
+data class AcousticFeatureSummary(
+    val estimatedTempoBpm: Float,
+    val rmsEnergyNormalized: Float,
+    val spectralBrightnessNormalized: Float,
+    val transientDensityNormalized: Float,
+    val warmMidRatioNormalized: Float,
+    val stereoWidthNormalized: Float,
+    val analyzedFramesCount: Int,
+    val sampleRateHz: Int,
+    val analysisMethodLabel: String
+)
+
+@Immutable
+data class MusicMoodAnalysisResult(
+    val trackId: String,
+    val verifiedTitle: String,
+    val verifiedArtist: String,
+    val verifiedAlbum: String,
+    val verifiedFormat: String,
+    val verifiedDurationMs: Long,
+    val detectedMood: DetectedMusicMood,
+    val confidencePercent: Int?,
+    val isSignalSufficient: Boolean,
+    val moodProbabilities: Map<DetectedMusicMood, Float>,
+    val suggestedPreset: LofiPreset,
+    val secondaryPreset: LofiPreset,
+    val acousticFeatures: AcousticFeatureSummary,
+    val acousticReasoning: String,
+    val analyzedAtMillis: Long = System.currentTimeMillis(),
+    val isSuggestionApplied: Boolean = false,
+    val isSuggestionIgnored: Boolean = false
+)
+

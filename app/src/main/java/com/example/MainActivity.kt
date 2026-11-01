@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -61,6 +62,7 @@ import com.example.ui.screens.EqualizerScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.LofiStudioScreen
+import com.example.ui.screens.MusicMoodScreen
 import com.example.ui.screens.PlaylistsScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.ElectricPurple
@@ -79,6 +81,7 @@ enum class LofiNavTab(val label: String, val icon: ImageVector, val testTag: Str
     PLAYLISTS("Playlists", Icons.AutoMirrored.Filled.QueueMusic, "nav_tab_playlists"),
     LOFI_STUDIO("Lo-Fi Studio", Icons.Default.Tune, "nav_tab_studio"),
     EQUALIZER("Equalizer", Icons.Default.Equalizer, "nav_tab_equalizer"),
+    MUSIC_MOOD("Music Mood", Icons.Default.AutoAwesome, "nav_tab_mood"),
     SETTINGS("Settings", Icons.Default.Settings, "nav_tab_settings")
 }
 
@@ -135,6 +138,8 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
     val pureAmoled by viewModel.pureAmoledBlack.collectAsStateWithLifecycle()
     val highQualityDecoding by viewModel.highQualityDecoding.collectAsStateWithLifecycle()
     val statusBanner by viewModel.statusBannerMessage.collectAsStateWithLifecycle()
+    val moodResult by viewModel.moodAnalysisResult.collectAsStateWithLifecycle()
+    val isAnalyzingMood by viewModel.isAnalyzingMood.collectAsStateWithLifecycle()
 
     // Auto-dismiss status toast banner after 3.2 seconds
     LaunchedEffect(statusBanner) {
@@ -299,6 +304,7 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 isPlaying = isPlaying,
                                 currentPositionMs = currentPosMs,
                                 durationMs = durationMs,
+                                moodResult = moodResult,
                                 onPlayTrack = { track -> viewModel.playTrack(track) },
                                 onTogglePlayPause = { viewModel.togglePlayPause() },
                                 onSkipPrevious = { viewModel.skipPrevious() },
@@ -308,6 +314,8 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 onSelectPreset = { preset -> viewModel.selectLofiPreset(preset) },
                                 onToggleLofiMode = { enabled -> viewModel.setLiveLofiMode(enabled) },
                                 onApplyAiRecommendation = { rec -> viewModel.applyAiMoodRecommendation(rec) },
+                                onOpenMoodScreen = { currentTab = LofiNavTab.MUSIC_MOOD },
+                                onApplyMoodPreset = { preset -> viewModel.applyMoodSuggestedPreset(preset) },
                                 onImportSongsClick = launchSafSongPicker,
                                 onScanDeviceClick = triggerMediaStoreScan,
                                 onNavigateToStudio = { currentTab = LofiNavTab.LOFI_STUDIO },
@@ -383,6 +391,18 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 onUpdateBand = { idx, gain -> viewModel.updateEqBand(idx, gain) },
                                 onSelectBuiltInPreset = { name, gains -> viewModel.selectBuiltInEqPreset(name, gains) },
                                 onSaveCustomEqPreset = { name -> viewModel.saveCustomEqPreset(name) }
+                            )
+                        }
+                        LofiNavTab.MUSIC_MOOD -> {
+                            MusicMoodScreen(
+                                currentTrack = currentTrack ?: allTracks.firstOrNull(),
+                                moodResult = moodResult,
+                                isAnalyzing = isAnalyzingMood,
+                                dspParams = dspParams,
+                                onAnalyzeAgain = { viewModel.analyzeCurrentTrackMood(manualTrigger = true) },
+                                onApplyPreset = { preset -> viewModel.applyMoodSuggestedPreset(preset) },
+                                onIgnoreSuggestion = { viewModel.ignoreMoodSuggestion() },
+                                onBack = { currentTab = LofiNavTab.HOME }
                             )
                         }
                         LofiNavTab.SETTINGS -> {
@@ -463,7 +483,8 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                     },
                     onSelectQueueTrack = { qTrack -> viewModel.playTrack(qTrack, queue) },
                     onSetSleepTimerMinutes = { mins -> viewModel.startSleepTimer(mins) },
-                    onOpenLofiStudio = { currentTab = LofiNavTab.LOFI_STUDIO }
+                    onOpenLofiStudio = { currentTab = LofiNavTab.LOFI_STUDIO },
+                    onOpenMoodScreen = { currentTab = LofiNavTab.MUSIC_MOOD }
                 )
             }
         }

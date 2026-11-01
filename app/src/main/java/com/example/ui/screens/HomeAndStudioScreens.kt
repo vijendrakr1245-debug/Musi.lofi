@@ -86,6 +86,7 @@ import com.example.model.BuiltInLofiPresets
 import com.example.model.LibraryFilterTab
 import com.example.model.LofiDspParameters
 import com.example.model.LofiPreset
+import com.example.model.MusicMoodAnalysisResult
 import com.example.model.TrackItem
 import com.example.model.VisualizerSnapshot
 import com.example.ui.components.HifiLofiModeToggleBanner
@@ -128,6 +129,7 @@ fun HomeScreen(
     isPlaying: Boolean,
     currentPositionMs: Long = 0L,
     durationMs: Long = 0L,
+    moodResult: MusicMoodAnalysisResult? = null,
     onPlayTrack: (TrackItem) -> Unit,
     onTogglePlayPause: () -> Unit = {},
     onSkipPrevious: () -> Unit = {},
@@ -137,6 +139,8 @@ fun HomeScreen(
     onSelectPreset: (LofiPreset) -> Unit,
     onToggleLofiMode: (Boolean) -> Unit,
     onApplyAiRecommendation: (AiMoodRecommendation) -> Unit,
+    onOpenMoodScreen: () -> Unit = {},
+    onApplyMoodPreset: (LofiPreset) -> Unit = {},
     onImportSongsClick: () -> Unit,
     onScanDeviceClick: () -> Unit,
     onNavigateToStudio: () -> Unit,
@@ -677,6 +681,155 @@ fun HomeScreen(
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4B. AI MUSIC MOOD DETECTION (On-Device Acoustic Mood & Smart Preset Suggestion)
+        item {
+            val suggestedPreset = remember(moodResult, presets) {
+                moodResult?.suggestedPreset
+                    ?: presets.find { it.id == "soft_lofi" }
+                    ?: BuiltInLofiPresets.ALL.first { it.id == "soft_lofi" }
+            }
+            val isSuggestedAlreadyActive = dspParams.isLiveLofiEnabled && dspParams.presetId == suggestedPreset.id
+
+            Surface(
+                color = ElevatedCharcoal.copy(alpha = 0.90f),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                ElectricPurple.copy(alpha = 0.65f),
+                                NeonCyan.copy(alpha = 0.50f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    .clickable { onOpenMoodScreen() }
+                    .testTag("home_ai_mood_card")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "AI Music Mood Detection",
+                                tint = NeonCyan,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "AI MUSIC MOOD DETECTION",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = NeonCyan
+                            )
+                        }
+
+                        if (moodResult != null && moodResult.isSignalSufficient && moodResult.confidencePercent != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(ElectricPurple.copy(alpha = 0.22f))
+                                    .border(1.dp, ElectricPurpleBright.copy(alpha = 0.55f), RoundedCornerShape(50))
+                                    .padding(horizontal = 9.dp, vertical = 2.dp)
+                                    .testTag("home_mood_confidence_badge")
+                            ) {
+                                Text(
+                                    text = "${moodResult.confidencePercent}% Match",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (moodResult != null) {
+                                    "${moodResult.detectedMood.displayName} ${moodResult.detectedMood.emoji}"
+                                } else {
+                                    "Tap to Analyze Song Mood ✨"
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (moodResult != null) {
+                                    "Suggested Preset: ${moodResult.detectedMood.primaryPresetLabel}"
+                                } else {
+                                    "100% On-Device PCM Acoustic Analysis"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        if (moodResult != null && !moodResult.isSuggestionIgnored) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (isSuggestedAlreadyActive) {
+                                            StudioEmerald.copy(alpha = 0.22f)
+                                        } else {
+                                            ElectricPurple.copy(alpha = 0.85f)
+                                        }
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSuggestedAlreadyActive) StudioEmerald else NeonCyan.copy(alpha = 0.7f),
+                                        RoundedCornerShape(50)
+                                    )
+                                    .clickable {
+                                        if (!isSuggestedAlreadyActive) {
+                                            onApplyMoodPreset(suggestedPreset)
+                                        } else {
+                                            onOpenMoodScreen()
+                                        }
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 7.dp)
+                                    .testTag("home_apply_mood_preset_button")
+                            ) {
+                                Text(
+                                    text = if (isSuggestedAlreadyActive) "Active ✓" else "Apply Preset",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isSuggestedAlreadyActive) StudioEmerald else Color.White
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "Details →",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = ElectricPurpleBright
+                            )
                         }
                     }
                 }

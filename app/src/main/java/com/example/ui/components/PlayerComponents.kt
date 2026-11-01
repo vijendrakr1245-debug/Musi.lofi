@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
@@ -741,7 +742,8 @@ fun FullScreenNowPlayingOverlay(
     onSpeedChange: (Float) -> Unit,
     onSelectQueueTrack: (TrackItem) -> Unit,
     onSetSleepTimerMinutes: (Int) -> Unit,
-    onOpenLofiStudio: () -> Unit
+    onOpenLofiStudio: () -> Unit,
+    onOpenMoodScreen: () -> Unit = {}
 ) {
     BackHandler(onBack = onClose)
 
@@ -1315,7 +1317,7 @@ fun FullScreenNowPlayingOverlay(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Subtle Minimal Bottom Pill Bar for Artwork / Lyrics / Queue / Sleep Timer
+            // Subtle Minimal Bottom Pill Bar for Artwork / Lyrics / Queue / Sleep Timer / AI Mood
             Row(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
@@ -1335,7 +1337,7 @@ fun FullScreenNowPlayingOverlay(
                             .clip(RoundedCornerShape(50))
                             .background(if (selected) GlassSurface else Color.Transparent)
                             .clickable { activeSubTab = idx }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Icon(
                             imageVector = icon,
@@ -1343,13 +1345,40 @@ fun FullScreenNowPlayingOverlay(
                             tint = if (selected) NeonCyan else TextMuted,
                             modifier = Modifier.size(15.dp)
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = label,
                             style = MaterialTheme.typography.labelSmall,
                             color = if (selected) TextPrimary else TextMuted
                         )
                     }
+                }
+
+                // AI Mood Screen quick entry
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(ElectricPurple.copy(alpha = 0.22f))
+                        .clickable {
+                            onClose()
+                            onOpenMoodScreen()
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .testTag("now_playing_open_mood_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = "AI Mood",
+                        tint = NeonCyan,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Mood",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NeonCyan
+                    )
                 }
             }
         }

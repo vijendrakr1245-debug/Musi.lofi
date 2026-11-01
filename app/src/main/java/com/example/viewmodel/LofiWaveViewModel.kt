@@ -17,6 +17,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.audio.AudioEngineBridge
+import com.example.audio.MusicMoodAnalyzer
 import com.example.audio.StudioWavGenerator
 import com.example.data.CustomEqPresetEntity
 import com.example.data.CustomLofiPresetEntity
@@ -35,6 +36,7 @@ import com.example.model.LibraryFilterTab
 import com.example.model.LibrarySortOrder
 import com.example.model.LofiDspParameters
 import com.example.model.LofiPreset
+import com.example.model.MusicMoodAnalysisResult
 import com.example.model.TrackItem
 import com.example.model.VisualizerSnapshot
 import com.example.service.LofiPlaybackService
@@ -131,6 +133,13 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     // Status message / snackbar banner
     private val _statusBannerMessage = MutableStateFlow<String?>(null)
     val statusBannerMessage: StateFlow<String?> = _statusBannerMessage.asStateFlow()
+
+    // On-Device AI Music Mood Detection State
+    private val _moodAnalysisResult = MutableStateFlow<MusicMoodAnalysisResult?>(null)
+    val moodAnalysisResult: StateFlow<MusicMoodAnalysisResult?> = _moodAnalysisResult.asStateFlow()
+
+    private val _isAnalyzingMood = MutableStateFlow(false)
+    val isAnalyzingMood: StateFlow<Boolean> = _isAnalyzingMood.asStateFlow()
 
     // Favorites IDs set
     val favoriteTrackIds: StateFlow<Set<String>> = dao.getAllFavorites()
@@ -244,6 +253,7 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
                 _durationMs.value = player.duration.coerceAtLeast(track.durationMs)
                 _currentPositionMs.value = 0L
                 recordTrackPlayed(track)
+                analyzeCurrentTrackMood(manualTrigger = false)
                 viewModelScope.launch {
                     prefsRepo.saveLastPlayedTrackState(track.id, 0L)
                 }
@@ -525,6 +535,7 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
         if (playImmediately) {
             player.play()
         }
+        analyzeCurrentTrackMood(manualTrigger = false)
     }
 
     fun togglePlayPause() {
@@ -795,6 +806,59 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
             prefsRepo.saveEqualizerState(_eqState.value)
         }
         postBannerMessage("AI Assistant applied '${rec.moodTitle}': ${rec.recommendedPresetName}")
+    }
+
+    /**
+     * Runs 100% On-Device Acoustic Mood Detection on the currently selected/playing song.
+     * IMPORTANT: Does NOT automatically change audio effects — only updates [moodAnalysisResult]
+     * so the user can review and choose to Apply or Ignore the suggested Lo-Fi preset.
+     */
+    fun analyzeCurrentTrackMood(manualTrigger: Boolean = false) {
+        val targetTrack = _currentTrack.value ?: allTracks.value.firstOrNull() ?: return
+        viewModelScope.launch {
+            _isAnalyzingMood.value = true
+            if (manualTrigger) {
+                delay(180L) // Brief visual feedback when user taps "Analyze Again"
+            }
+            val liveSnap = if (_isPlaying.value) visualizerFlow.value else null
+            val result = MusicMoodAnalyzer.analyzeTrack(
+                context = appContext,
+                track = targetTrack,
+                liveSnapshot = liveSnap,
+                availablePresets = allLofiPresets.value
+            )
+            _moodAnalysisResult.value = result
+            _isAnalyzingMood.value = false
+            if (manualTrigger) {
+                val confText = result.confidencePercent?.let { " ($it%)" } ?: ""
+                postBannerMessage(
+                    "Detected Mood: ${result.detectedMood.displayName} ${result.detectedMood.emoji}$confText • Suggested: ${result.suggestedPreset.name}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Applies the suggested Lo-Fi preset from AI Music Mood Detection ONLY when the user
+     * explicitly clicks "Apply Preset".
+     */
+    fun applyMoodSuggestedPreset(preset: LofiPreset) {
+        selectLofiPreset(preset)
+        _moodAnalysisResult.value = _moodAnalysisResult.value?.copy(
+            isSuggestionApplied = true,
+            isSuggestionIgnored = false
+        )
+    }
+
+    /**
+     * Dismisses/ignores the current mood preset suggestion without altering any audio effects.
+     */
+    fun ignoreMoodSuggestion() {
+        _moodAnalysisResult.value = _moodAnalysisResult.value?.copy(
+            isSuggestionIgnored = true,
+            isSuggestionApplied = false
+        )
+        postBannerMessage("Suggestion ignored — current audio settings kept unchanged")
     }
 
     // =========================================================================

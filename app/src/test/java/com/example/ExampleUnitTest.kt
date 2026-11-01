@@ -4,11 +4,17 @@ import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import com.example.audio.AudioEngine
 import com.example.audio.LofiDspAudioProcessor
+import com.example.audio.MusicMoodAnalyzer
 import com.example.model.BuiltInLofiPresets
+import com.example.model.DetectedMusicMood
 import com.example.model.EqualizerState
 import com.example.model.LofiDspParameters
+import com.example.model.TrackItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.ByteBuffer
@@ -65,21 +71,128 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun verifyAllProfessionalPresetsExist() {
+    fun verifyAllProfessionalPresetsAndSmartMoodMappingsExist() {
         val presetIds = BuiltInLofiPresets.ALL.map { it.id }
-        val requiredPhase4Presets = listOf(
+        val requiredPresets = listOf(
             "original",
             "soft_lofi",
             "deep_lofi",
             "vinyl_classic",
             "rainy_night",
             "dreamy_lofi",
-            "cassette_tape"
+            "cassette_tape",
+            "balanced_lofi",
+            "soft_ambient",
+            "warm_lofi"
         )
-        for (reqId in requiredPhase4Presets) {
-            assertTrue("Expected Phase 4 preset '$reqId' to exist", reqId in presetIds)
+        for (reqId in requiredPresets) {
+            assertTrue("Expected preset '$reqId' to exist", reqId in presetIds)
         }
-        assertTrue(BuiltInLofiPresets.ALL.size >= 7)
+        assertEquals(7, DetectedMusicMood.entries.size)
+        for (mood in DetectedMusicMood.entries) {
+            assertTrue(
+                "Expected mood ${mood.displayName} primary preset '${mood.primaryPresetId}' to exist",
+                mood.primaryPresetId in presetIds
+            )
+        }
+    }
+
+    @Test
+    fun verifyMusicMoodAnalyzerDetectsDifferentSongTypesAndWithholdsConfidenceOnSilence() {
+        val sampleRate = 44100
+        val seconds = 4
+        val totalFrames = sampleRate * seconds
+
+        val testTrack = TrackItem(
+            id = "test_song_1",
+            title = "Test Acoustic Track",
+            artist = "Test Artist",
+            album = "Test Album",
+            durationMs = 4000L,
+            uriString = "file:///tmp/nonexistent.wav"
+        )
+
+        // 1. Silent PCM buffer -> must NOT invent confidence (confidencePercent == null, isSignalSufficient == false)
+        val silentPcm = ByteArray(totalFrames * 4)
+        val silentResult = MusicMoodAnalyzer.analyzePcmBuffer(
+            track = testTrack,
+            pcmBytes = silentPcm,
+            sampleRateHz = sampleRate,
+            channelCount = 2,
+            liveSnapshot = null
+        )
+        assertFalse("Silent audio must not claim signal sufficiency", silentResult.isSignalSufficient)
+        assertNull("Silent audio must withhold confidence percentage", silentResult.confidencePercent)
+
+        // 2. High-energy rhythmic track with 128 BPM pulses & bright upper harmonics
+        val energeticPcm = ByteArray(totalFrames * 4)
+        val energeticBb = ByteBuffer.wrap(energeticPcm).order(ByteOrder.LITTLE_ENDIAN)
+        val beatPeriodSec = 60.0 / 128.0
+        for (i in 0 until totalFrames) {
+            val t = i.toDouble() / sampleRate
+            val phaseInBeat = (t % beatPeriodSec) / beatPeriodSec
+            val env = if (phaseInBeat < 0.18) 0.95 else 0.12
+            val sig = env * (
+                0.45 * sin(2.0 * PI * 140.0 * t) +
+                    0.35 * sin(2.0 * PI * 2600.0 * t) +
+                    0.20 * sin(2.0 * PI * 4200.0 * t)
+                )
+            val pcmVal = (sig * 28000.0).toInt().coerceIn(-32767, 32767).toShort()
+            energeticBb.putShort(pcmVal)
+            energeticBb.putShort(pcmVal)
+        }
+        val energeticResult = MusicMoodAnalyzer.analyzePcmBuffer(
+            track = testTrack,
+            pcmBytes = energeticPcm,
+            sampleRateHz = sampleRate,
+            channelCount = 2,
+            liveSnapshot = null
+        )
+        assertTrue(energeticResult.isSignalSufficient)
+        assertNotNull(energeticResult.confidencePercent)
+        assertTrue(
+            "Expected Energetic or Happy mood for fast bright transient song, got ${energeticResult.detectedMood}",
+            energeticResult.detectedMood == DetectedMusicMood.ENERGETIC ||
+                energeticResult.detectedMood == DetectedMusicMood.HAPPY
+        )
+        assertTrue(
+            energeticResult.suggestedPreset.id == "balanced_lofi" ||
+                energeticResult.suggestedPreset.id == "warm_lofi"
+        )
+
+        // 3. Slow, dark, sub-bass heavy melancholic song (low brightness, slow ~68 BPM swell)
+        val sadPcm = ByteArray(totalFrames * 4)
+        val sadBb = ByteBuffer.wrap(sadPcm).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until totalFrames) {
+            val t = i.toDouble() / sampleRate
+            val slowEnv = 0.25 + 0.10 * sin(2.0 * PI * (68.0 / 60.0) * t)
+            val sig = slowEnv * (0.75 * sin(2.0 * PI * 110.0 * t) + 0.25 * sin(2.0 * PI * 220.0 * t))
+            val pcmVal = (sig * 12000.0).toInt().coerceIn(-32767, 32767).toShort()
+            sadBb.putShort(pcmVal)
+            sadBb.putShort(pcmVal)
+        }
+        val sadResult = MusicMoodAnalyzer.analyzePcmBuffer(
+            track = testTrack,
+            pcmBytes = sadPcm,
+            sampleRateHz = sampleRate,
+            channelCount = 2,
+            liveSnapshot = null
+        )
+        assertTrue(sadResult.isSignalSufficient)
+        assertNotNull(sadResult.confidencePercent)
+        assertTrue(
+            "Expected Sad, Relaxing, or Peaceful mood for slow dark low-energy song, got ${sadResult.detectedMood}",
+            sadResult.detectedMood in setOf(
+                DetectedMusicMood.SAD,
+                DetectedMusicMood.RELAXING,
+                DetectedMusicMood.PEACEFUL
+            )
+        )
+        assertNotEquals(
+            "Differing acoustic songs must produce distinct feature profiles",
+            energeticResult.acousticFeatures.spectralBrightnessNormalized,
+            sadResult.acousticFeatures.spectralBrightnessNormalized
+        )
     }
 
     @Test
