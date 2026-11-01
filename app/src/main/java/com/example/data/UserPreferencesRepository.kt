@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.model.EqualizerState
+import com.example.model.LiveSoundMode
 import com.example.model.LofiDspParameters
 import com.example.ui.theme.AccentTheme
 import kotlinx.coroutines.flow.Flow
@@ -19,8 +20,8 @@ import kotlinx.coroutines.flow.map
 private val Context.lofiDataStore: DataStore<Preferences> by preferencesDataStore(name = "lofi_wave_preferences")
 
 data class AppPreferencesState(
-    val accentTheme: AccentTheme = AccentTheme.ELECTRIC_PURPLE,
-    val pureAmoledBlack: Boolean = true,
+    val accentTheme: AccentTheme = AccentTheme.ANIME_LOFI_NIGHT,
+    val pureAmoledBlack: Boolean = false,
     val highQualityDecoding: Boolean = true,
     val lastSelectedPresetId: String = "rainy_night",
     val lastPlayedTrackId: String? = null,
@@ -40,6 +41,7 @@ class UserPreferencesRepository(private val context: Context) {
 
         // DSP State Keys
         val IS_LIVE_LOFI = booleanPreferencesKey("is_live_lofi")
+        val SOUND_MODE = stringPreferencesKey("sound_mode")
         val PRESET_ID = stringPreferencesKey("preset_id")
         val PRESET_NAME = stringPreferencesKey("preset_name")
         val MASTER_INTENSITY = floatPreferencesKey("master_intensity")
@@ -55,14 +57,22 @@ class UserPreferencesRepository(private val context: Context) {
         val WOW_DEPTH = floatPreferencesKey("wow_depth")
         val WOW_RATE = floatPreferencesKey("wow_rate")
         val WARM_BASS_DB = floatPreferencesKey("warm_bass_db")
+        val MIDRANGE_GAIN_DB = floatPreferencesKey("midrange_gain_db")
         val SOFT_DIST = floatPreferencesKey("soft_dist")
         val REVERB_MIX = floatPreferencesKey("reverb_mix")
         val REVERB_ROOM = floatPreferencesKey("reverb_room")
+        val ECHO_MIX = floatPreferencesKey("echo_mix")
+        val ECHO_DELAY_MS = floatPreferencesKey("echo_delay_ms")
+        val ECHO_FEEDBACK = floatPreferencesKey("echo_feedback")
         val STEREO_WIDTH = floatPreferencesKey("stereo_width")
+        val SPATIAL_INTENSITY = floatPreferencesKey("spatial_intensity")
+        val EIGHT_D_SPEED_HZ = floatPreferencesKey("eight_d_speed_hz")
+        val SPATIAL_DISTANCE = floatPreferencesKey("spatial_distance")
         val SOFT_COMP = floatPreferencesKey("soft_comp")
         val HIGH_FREQ_RED_DB = floatPreferencesKey("high_freq_red_db")
         val TREBLE_GAIN_DB = floatPreferencesKey("treble_gain_db")
         val PLAYBACK_SPEED = floatPreferencesKey("playback_speed")
+        val PITCH_SEMITONES = floatPreferencesKey("pitch_semitones")
 
         // EQ State Keys
         val EQ_ENABLED = booleanPreferencesKey("eq_enabled")
@@ -81,8 +91,11 @@ class UserPreferencesRepository(private val context: Context) {
         val defDsp = LofiDspParameters()
         val defEq = EqualizerState()
 
-        val themeName = prefs[Keys.ACCENT_THEME] ?: AccentTheme.ELECTRIC_PURPLE.name
-        val accentTheme = runCatching { AccentTheme.valueOf(themeName) }.getOrDefault(AccentTheme.ELECTRIC_PURPLE)
+        val themeName = prefs[Keys.ACCENT_THEME] ?: AccentTheme.ANIME_LOFI_NIGHT.name
+        val accentTheme = runCatching { AccentTheme.valueOf(themeName) }.getOrDefault(AccentTheme.ANIME_LOFI_NIGHT)
+
+        val soundModeName = prefs[Keys.SOUND_MODE] ?: defDsp.soundMode.name
+        val soundMode = runCatching { LiveSoundMode.valueOf(soundModeName) }.getOrDefault(defDsp.soundMode)
 
         val bandsCsv = prefs[Keys.EQ_BANDS_CSV]
         val parsedBands = bandsCsv?.split(",")?.mapNotNull { it.toFloatOrNull() }
@@ -90,6 +103,7 @@ class UserPreferencesRepository(private val context: Context) {
 
         val dsp = LofiDspParameters(
             isLiveLofiEnabled = prefs[Keys.IS_LIVE_LOFI] ?: defDsp.isLiveLofiEnabled,
+            soundMode = soundMode,
             presetId = prefs[Keys.PRESET_ID] ?: defDsp.presetId,
             presetName = prefs[Keys.PRESET_NAME] ?: defDsp.presetName,
             masterIntensity = prefs[Keys.MASTER_INTENSITY] ?: defDsp.masterIntensity,
@@ -104,14 +118,22 @@ class UserPreferencesRepository(private val context: Context) {
             wowFlutterDepth = prefs[Keys.WOW_DEPTH] ?: defDsp.wowFlutterDepth,
             wowFlutterRateHz = prefs[Keys.WOW_RATE] ?: defDsp.wowFlutterRateHz,
             warmBassBoostDb = prefs[Keys.WARM_BASS_DB] ?: defDsp.warmBassBoostDb,
+            midrangeGainDb = prefs[Keys.MIDRANGE_GAIN_DB] ?: defDsp.midrangeGainDb,
             softDistortion = prefs[Keys.SOFT_DIST] ?: defDsp.softDistortion,
             reverbMix = prefs[Keys.REVERB_MIX] ?: defDsp.reverbMix,
             reverbRoomSize = prefs[Keys.REVERB_ROOM] ?: defDsp.reverbRoomSize,
+            echoMix = prefs[Keys.ECHO_MIX] ?: defDsp.echoMix,
+            echoDelayMs = prefs[Keys.ECHO_DELAY_MS] ?: defDsp.echoDelayMs,
+            echoFeedback = prefs[Keys.ECHO_FEEDBACK] ?: defDsp.echoFeedback,
             stereoWidth = prefs[Keys.STEREO_WIDTH] ?: defDsp.stereoWidth,
+            spatialIntensity = prefs[Keys.SPATIAL_INTENSITY] ?: defDsp.spatialIntensity,
+            eightDRotationSpeedHz = prefs[Keys.EIGHT_D_SPEED_HZ] ?: defDsp.eightDRotationSpeedHz,
+            spatialDistance = prefs[Keys.SPATIAL_DISTANCE] ?: defDsp.spatialDistance,
             softCompression = prefs[Keys.SOFT_COMP] ?: defDsp.softCompression,
             highFreqReductionDb = prefs[Keys.HIGH_FREQ_RED_DB] ?: defDsp.highFreqReductionDb,
             trebleGainDb = prefs[Keys.TREBLE_GAIN_DB] ?: defDsp.trebleGainDb,
             playbackSpeed = prefs[Keys.PLAYBACK_SPEED] ?: defDsp.playbackSpeed,
+            pitchSemitones = prefs[Keys.PITCH_SEMITONES] ?: defDsp.pitchSemitones,
             masterGainDb = prefs[Keys.MASTER_GAIN_DB] ?: defDsp.masterGainDb
         )
 
@@ -130,7 +152,7 @@ class UserPreferencesRepository(private val context: Context) {
 
         AppPreferencesState(
             accentTheme = accentTheme,
-            pureAmoledBlack = prefs[Keys.PURE_AMOLED] ?: true,
+            pureAmoledBlack = prefs[Keys.PURE_AMOLED] ?: (accentTheme == AccentTheme.AMOLED_BLACK),
             highQualityDecoding = prefs[Keys.HIGH_QUALITY_DECODING] ?: true,
             lastSelectedPresetId = dsp.presetId,
             lastPlayedTrackId = prefs[Keys.LAST_PLAYED_TRACK_ID],
@@ -150,6 +172,7 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun saveDspParameters(params: LofiDspParameters) {
         context.lofiDataStore.edit { prefs ->
             prefs[Keys.IS_LIVE_LOFI] = params.isLiveLofiEnabled
+            prefs[Keys.SOUND_MODE] = params.soundMode.name
             prefs[Keys.PRESET_ID] = params.presetId
             prefs[Keys.PRESET_NAME] = params.presetName
             prefs[Keys.MASTER_INTENSITY] = params.masterIntensity
@@ -165,14 +188,22 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.WOW_DEPTH] = params.wowFlutterDepth
             prefs[Keys.WOW_RATE] = params.wowFlutterRateHz
             prefs[Keys.WARM_BASS_DB] = params.warmBassBoostDb
+            prefs[Keys.MIDRANGE_GAIN_DB] = params.midrangeGainDb
             prefs[Keys.SOFT_DIST] = params.softDistortion
             prefs[Keys.REVERB_MIX] = params.reverbMix
             prefs[Keys.REVERB_ROOM] = params.reverbRoomSize
+            prefs[Keys.ECHO_MIX] = params.echoMix
+            prefs[Keys.ECHO_DELAY_MS] = params.echoDelayMs
+            prefs[Keys.ECHO_FEEDBACK] = params.echoFeedback
             prefs[Keys.STEREO_WIDTH] = params.stereoWidth
+            prefs[Keys.SPATIAL_INTENSITY] = params.spatialIntensity
+            prefs[Keys.EIGHT_D_SPEED_HZ] = params.eightDRotationSpeedHz
+            prefs[Keys.SPATIAL_DISTANCE] = params.spatialDistance
             prefs[Keys.SOFT_COMP] = params.softCompression
             prefs[Keys.HIGH_FREQ_RED_DB] = params.highFreqReductionDb
             prefs[Keys.TREBLE_GAIN_DB] = params.trebleGainDb
             prefs[Keys.PLAYBACK_SPEED] = params.playbackSpeed
+            prefs[Keys.PITCH_SEMITONES] = params.pitchSemitones
         }
     }
 

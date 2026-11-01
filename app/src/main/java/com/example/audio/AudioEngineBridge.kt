@@ -12,18 +12,21 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import com.example.model.EqualizerState
+import com.example.model.LiveSoundMode
 import com.example.model.LofiDspParameters
 import kotlin.math.abs
+import kotlin.math.pow
 
 /**
  * Singleton Audio Engine Bridge connecting the Foreground MediaSessionService,
- * the Real-Time LofiDspAudioProcessor, and the UI ViewModel.
+ * the Real-Time LofiDspAudioProcessor, the AmbientSoundEngine, and the UI ViewModel.
  */
 @OptIn(UnstableApi::class)
 object AudioEngineBridge {
 
     val dspProcessor = LofiDspAudioProcessor()
     val pcmAudioEngine = AudioEngine()
+    val ambientSoundEngine = AmbientSoundEngine()
 
     @Volatile
     private var exoPlayerInstance: ExoPlayer? = null
@@ -69,19 +72,25 @@ object AudioEngineBridge {
         pcmAudioEngine.setMasterGainDb(params.masterGainDb)
         val player = exoPlayerInstance ?: return
 
-        // Avoid unnecessary resampling and WSOLA time-stretching:
-        // Keep PlaybackParameters.DEFAULT (1.0f, 1.0f) unless the user explicitly adjusts playbackSpeed away from 1.0f.
-        // When playbackSpeed is adjusted, lock pitch == speed like a natural analog tape deck to avoid phasey WSOLA vocal artifacts.
-        val rawSpeed = if (params.isLiveLofiEnabled && params.presetId != "original") {
+        val isDspOrModeActive = (params.isLiveLofiEnabled && params.presetId != "original") ||
+            params.soundMode != LiveSoundMode.ORIGINAL_STEREO
+        val rawSpeed = if (isDspOrModeActive) {
             params.playbackSpeed.coerceIn(0.65f, 1.35f)
         } else {
             1.0f
         }
         val effectiveSpeed = if (abs(rawSpeed - 1.0f) < 0.005f) 1.0f else rawSpeed
-        val targetPlaybackParams = if (effectiveSpeed == 1.0f) {
+        val pitchSemitones = if (isDspOrModeActive) params.pitchSemitones.coerceIn(-12f, 12f) else 0f
+        val pitchMultiplier = if (abs(pitchSemitones) < 0.05f) {
+            effectiveSpeed // Analog tape-locked pitch when no explicit semitone shift is set
+        } else {
+            (effectiveSpeed * 2.0.pow(pitchSemitones.toDouble() / 12.0).toFloat()).coerceIn(0.55f, 1.65f)
+        }
+
+        val targetPlaybackParams = if (effectiveSpeed == 1.0f && abs(pitchMultiplier - 1.0f) < 0.005f) {
             PlaybackParameters.DEFAULT
         } else {
-            PlaybackParameters(effectiveSpeed, effectiveSpeed)
+            PlaybackParameters(effectiveSpeed, pitchMultiplier)
         }
 
         if (player.playbackParameters != targetPlaybackParams) {
@@ -101,6 +110,7 @@ object AudioEngineBridge {
 
     @Synchronized
     fun releasePlayer() {
+        ambientSoundEngine.stopAll()
         pcmAudioEngine.stopAndRelease()
         exoPlayerInstance?.release()
         exoPlayerInstance = null

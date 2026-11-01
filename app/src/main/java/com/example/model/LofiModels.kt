@@ -3,9 +3,92 @@ package com.example.model
 import androidx.compose.runtime.Immutable
 import kotlin.math.max
 
+/**
+ * 10 Real-Time Live Audio Modes (Part 2 – Advanced Live Audio Modes).
+ */
+enum class LiveSoundMode(
+    val id: String,
+    val displayName: String,
+    val badge: String,
+    val subtitle: String,
+    val technicalDetail: String
+) {
+    ORIGINAL_STEREO(
+        id = "original_stereo",
+        displayName = "Original Stereo",
+        badge = "HI-FI STEREO",
+        subtitle = "Bit-transparent original stereo audio with zero coloration",
+        technicalDetail = "Bypasses Lo-Fi, spatial, and coloration stages while maintaining true-peak ceiling protection"
+    ),
+    LIVE_LOFI(
+        id = "live_lofi",
+        displayName = "Live Lo-Fi",
+        badge = "ANALOG LO-FI",
+        subtitle = "Warm tape saturation, Butterworth low-pass, wow/flutter & vinyl texture",
+        technicalDetail = "Full 10-stage analog Lo-Fi DSP pipeline driven by the active Lo-Fi preset"
+    ),
+    EIGHT_D_ULTRA(
+        id = "eight_d_ultra",
+        displayName = "8D Ultra",
+        badge = "8D ORBIT",
+        subtitle = "Continuous 360° stereo orbit, smooth panning, cross-feed & room halo",
+        technicalDetail = "Quadrature LFO azimuth panner + interaural delay + rear shadow filter + spatial reverb"
+    ),
+    THREE_D_SPATIAL(
+        id = "three_d_spatial",
+        displayName = "3D Spatial Audio",
+        badge = "BINAURAL HRTF",
+        subtitle = "Spherical-head ITD/ILD + pinna elevation notch binaural headphone stage",
+        technicalDetail = "Woodworth spherical-head ITD fractional delay + head-shadow ILD + 7.2kHz pinna notch & concha cues"
+    ),
+    ULTRA_SURROUND(
+        id = "ultra_surround",
+        displayName = "Ultra Surround",
+        badge = "M/S SURROUND",
+        subtitle = "Controlled stereo widening, spatial depth & rock-solid mono-safe center",
+        technicalDetail = "High-passed Side (>180Hz) M/S expansion + Haas all-pass decorrelation with mono compatibility"
+    ),
+    BASS_BOOST(
+        id = "bass_boost",
+        displayName = "Bass Boost",
+        badge = "PUNCH BASS",
+        subtitle = "Tight 95Hz low-shelf punch with harmonic warmth & clean vocal midrange",
+        technicalDetail = "+4.5 dB 95Hz biquad low-shelf + 2nd-order harmonic exciter + anti-clip headroom trim"
+    ),
+    DEEP_BASS(
+        id = "deep_bass",
+        displayName = "Deep Bass",
+        badge = "SUB DEPTH",
+        subtitle = "Extended 58Hz sub-bass weight with warm analog saturation",
+        technicalDetail = "+5.2 dB 58Hz sub-shelf + 110Hz warmth contour + soft-knee bus glue"
+    ),
+    SOFT_BASS(
+        id = "soft_bass",
+        displayName = "Soft Bass",
+        badge = "VELVET LOWS",
+        subtitle = "Smooth, rounded acoustic bass cushion without transient harshness",
+        technicalDetail = "+3.0 dB warm low-shelf + gentle transient rounding + silky 9.5kHz top-end"
+    ),
+    CLEAR_VOCAL(
+        id = "clear_vocal",
+        displayName = "Clear Vocal",
+        badge = "VOCAL FOCUS",
+        subtitle = "Articulate 2.4kHz vocal presence, reduced 220Hz mud & airy harmonics",
+        technicalDetail = "110Hz high-pass + -2.2 dB 220Hz mud cut + +3.4 dB 2.4kHz vocal presence peak"
+    ),
+    DREAMY_SOUND(
+        id = "dreamy_sound",
+        displayName = "Dreamy Sound",
+        badge = "ETHEREAL",
+        subtitle = "Lush stereo chorus drift, velvet Schroeder reverb & shimmering air",
+        technicalDetail = "Dual-tap modulated chorus delay + 74% room size Schroeder reverb + 122% M/S width"
+    )
+}
+
 @Immutable
 data class LofiDspParameters(
     val isLiveLofiEnabled: Boolean = true,
+    val soundMode: LiveSoundMode = LiveSoundMode.LIVE_LOFI,
     val presetId: String = "soft_lofi",
     val presetName: String = "Soft Lo-Fi",
     val masterIntensity: Float = 0.72f,
@@ -20,14 +103,25 @@ data class LofiDspParameters(
     val wowFlutterDepth: Float = 0.08f,
     val wowFlutterRateHz: Float = 0.95f,
     val warmBassBoostDb: Float = 1.5f,
+    val midrangeGainDb: Float = 0.0f,
     val softDistortion: Float = 0.0f,
     val reverbMix: Float = 0.12f,
     val reverbRoomSize: Float = 0.56f,
+    val echoMix: Float = 0.0f,
+    val echoDelayMs: Float = 280f,
+    val echoFeedback: Float = 0.32f,
     val stereoWidth: Float = 1.05f,
+    val spatialIntensity: Float = 0.70f,
+    val eightDRotationSpeedHz: Float = 0.14f,
+    val spatialDistance: Float = 0.35f,
+    val spatialAzimuthDeg: Float = 0.0f,
+    val spatialElevationDeg: Float = 15.0f,
+    val spatialAutoOrbit: Boolean = true,
     val softCompression: Float = 0.10f,
     val highFreqReductionDb: Float = 1.0f,
     val trebleGainDb: Float = -0.5f,
     val playbackSpeed: Float = 1.0f,
+    val pitchSemitones: Float = 0.0f,
     val masterGainDb: Float = 0.0f
 ) {
     /**
@@ -138,7 +232,37 @@ enum class LibraryFilterTab(val label: String) {
     ALBUMS("Albums"),
     ARTISTS("Artists"),
     FOLDERS("Folders"),
-    CUSTOM_PLAYLISTS("Custom Playlists")
+    CUSTOM_PLAYLISTS("Custom Playlists"),
+    CONVERTED_SONGS("Converted Songs")
+}
+
+/**
+ * Live Visualizer Display Modes (Part 7 – Live Visualizer).
+ */
+enum class VisualizerMode(val label: String) {
+    SPECTRUM_BARS("Spectrum Bars"),
+    WAVEFORM("Waveform"),
+    CIRCULAR("Circular"),
+    THREE_D_STAGE("3D Audio");
+
+    val displayName: String get() = label
+}
+
+/**
+ * Ambient Sound Mixer Layers (Part 6 – Ambient Sound Mixer).
+ */
+enum class AmbientLayerType(
+    val id: String,
+    val displayName: String,
+    val emoji: String,
+    val subtitle: String
+) {
+    RAIN("rain", "Rain", "🌧️", "Warm rooftop rainfall & soft window droplets"),
+    OCEAN("ocean", "Ocean", "🌊", "Rhythmic Pacific surf waves & coastal foam"),
+    WIND("wind", "Wind", "🍃", "Gentle mountain breeze & whispering pines"),
+    NIGHT_AMBIENCE("night", "Night Ambience", "🌙", "Summer evening crickets & calm midnight air"),
+    BIRDS("birds", "Birds", "🐦", "Dawn forest birdsong & peaceful canopy chirps"),
+    THUNDERSTORM("thunder", "Thunderstorm", "⛈️", "Distant rolling thunder & steady rain")
 }
 
 @Immutable
@@ -988,4 +1112,601 @@ data class MusicMoodAnalysisResult(
     val isSuggestionApplied: Boolean = false,
     val isSuggestionIgnored: Boolean = false
 )
+
+// =========================================================================
+// PART 3 & PART 10 – MUSIC STYLE CONVERTER STUDIO & EXPORT ENGINE MODELS
+// =========================================================================
+
+enum class ConverterCategory(val displayName: String, val badge: String) {
+    LOFI("Lo-Fi", "5 Presets"),
+    PHONK("Phonk", "4 Presets"),
+    BASS("Bass", "5 Presets"),
+    OTHER_STYLES("Other Styles", "8 Presets")
+}
+
+@Immutable
+data class MusicConverterPreset(
+    val id: String,
+    val name: String,
+    val category: ConverterCategory,
+    val subtitle: String,
+    val dspMethodDescription: String,
+    val dspParameters: LofiDspParameters,
+    val eqBandGainsDb: List<Float> = List(10) { 0f },
+    val cowbellResonanceAmount: Float = 0f,
+    val subHarmonicAmount: Float = 0f,
+    val badge: String = category.displayName
+)
+
+enum class ExportQualityOption(
+    val id: String,
+    val label: String,
+    val formatExtension: String,
+    val mimeType: String,
+    val sampleRateHz: Int,
+    val bitRateKbps: Int,
+    val description: String
+) {
+    WAV_44K_16BIT(
+        id = "wav_44k",
+        label = "44.1 kHz Studio WAV",
+        formatExtension = "wav",
+        mimeType = "audio/wav",
+        sampleRateHz = 44100,
+        bitRateKbps = 1411,
+        description = "Uncompressed CD-quality stereo RIFF WAV (1411 kbps)"
+    ),
+    WAV_48K_16BIT(
+        id = "wav_48k",
+        label = "48 kHz Hi-Res WAV",
+        formatExtension = "wav",
+        mimeType = "audio/wav",
+        sampleRateHz = 48000,
+        bitRateKbps = 1536,
+        description = "Uncompressed 48 kHz studio master stereo RIFF WAV (1536 kbps)"
+    ),
+    WAV_24K_VINTAGE(
+        id = "wav_24k",
+        label = "24 kHz Vintage WAV",
+        formatExtension = "wav",
+        mimeType = "audio/wav",
+        sampleRateHz = 24000,
+        bitRateKbps = 768,
+        description = "Authentic sampler-rate stereo WAV with smaller file size (768 kbps)"
+    );
+
+    companion object {
+        val WAV_44_1_KHZ: ExportQualityOption get() = WAV_44K_16BIT
+        val WAV_48_KHZ: ExportQualityOption get() = WAV_48K_16BIT
+        val WAV_24_KHZ: ExportQualityOption get() = WAV_24K_VINTAGE
+    }
+}
+
+@Immutable
+data class ExportProgressState(
+    val isExporting: Boolean = false,
+    val progressFraction: Float = 0f,
+    val progressPercent: Int = (progressFraction * 100f).toInt(),
+    val statusText: String = "Ready to convert & export",
+    val exportedFilePath: String? = null,
+    val completedTrack: TrackItem? = null,
+    val exportedTrack: TrackItem? = completedTrack,
+    val wasCancelled: Boolean = false,
+    val errorMessage: String? = null
+)
+
+object BuiltInConverterPresets {
+    fun byCategory(category: ConverterCategory): List<MusicConverterPreset> =
+        ALL.filter { it.category == category }
+
+    val ALL: List<MusicConverterPreset> = listOf(
+        // ---------------- LO-FI (5) ----------------
+        MusicConverterPreset(
+            id = "conv_classic_lofi",
+            name = "Classic Lo-Fi",
+            category = ConverterCategory.LOFI,
+            subtitle = "Warm 7.2kHz low-pass, gentle tape wow & nostalgic vinyl dust",
+            dspMethodDescription = "Butterworth LPF (7.2kHz) + Tape Saturation (22%) + Wow/Flutter (12%) + Vinyl Texture",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "conv_classic_lofi",
+                presetName = "Classic Lo-Fi",
+                masterIntensity = 0.80f,
+                lowPassCutoffHz = 7200f,
+                highPassCutoffHz = 38f,
+                analogSaturation = 0.22f,
+                vinylCrackle = 0.14f,
+                vinylNoise = 0.12f,
+                tapeHiss = 0.04f,
+                wowFlutterDepth = 0.12f,
+                warmBassBoostDb = 2.0f,
+                reverbMix = 0.16f
+            )
+        ),
+        MusicConverterPreset(
+            id = "conv_soft_lofi",
+            name = "Soft Lo-Fi",
+            category = ConverterCategory.LOFI,
+            subtitle = "Clean, velvet analog warmth with articulate vocals & smooth highs",
+            dspMethodDescription = "8.6kHz Gentle LPF + Warm Low-Shelf (+1.6dB) + Soft Tape Saturation (16%)",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "conv_soft_lofi",
+                presetName = "Soft Lo-Fi",
+                masterIntensity = 0.74f,
+                lowPassCutoffHz = 8600f,
+                highPassCutoffHz = 28f,
+                analogSaturation = 0.16f,
+                vinylCrackle = 0.05f,
+                vinylNoise = 0.06f,
+                wowFlutterDepth = 0.08f,
+                warmBassBoostDb = 1.6f,
+                reverbMix = 0.12f
+            )
+        ),
+        MusicConverterPreset(
+            id = "conv_rainy_lofi",
+            name = "Rainy Lo-Fi",
+            category = ConverterCategory.LOFI,
+            subtitle = "Cozy midnight room reflections, dark 5.8kHz filter & rain atmosphere",
+            dspMethodDescription = "5.8kHz LPF + Schroeder Room Reverb (26%) + Stereo Vinyl Canopy (16%)",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "conv_rainy_lofi",
+                presetName = "Rainy Lo-Fi",
+                masterIntensity = 0.82f,
+                lowPassCutoffHz = 5800f,
+                highPassCutoffHz = 35f,
+                analogSaturation = 0.20f,
+                vinylCrackle = 0.15f,
+                vinylNoise = 0.16f,
+                tapeHiss = 0.05f,
+                wowFlutterDepth = 0.11f,
+                warmBassBoostDb = 2.2f,
+                reverbMix = 0.26f,
+                reverbRoomSize = 0.72f,
+                stereoWidth = 1.15f
+            )
+        ),
+        MusicConverterPreset(
+            id = "conv_dreamy_lofi",
+            name = "Dreamy Lo-Fi",
+            category = ConverterCategory.LOFI,
+            subtitle = "Lush stereo chorus drift, spacious velvet reverb & floating pitch",
+            dspMethodDescription = "Dreamy Sound Mode + 7.5kHz LPF + Chorus Drift (18%) + 124% Stereo Width",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.DREAMY_SOUND,
+                presetId = "conv_dreamy_lofi",
+                presetName = "Dreamy Lo-Fi",
+                masterIntensity = 0.80f,
+                lowPassCutoffHz = 7500f,
+                analogSaturation = 0.16f,
+                wowFlutterDepth = 0.18f,
+                warmBassBoostDb = 1.6f,
+                reverbMix = 0.30f,
+                reverbRoomSize = 0.78f,
+                stereoWidth = 1.24f
+            )
+        ),
+        MusicConverterPreset(
+            id = "conv_vinyl_lofi",
+            name = "Vinyl Lo-Fi",
+            category = ConverterCategory.LOFI,
+            subtitle = "Authentic 33⅓ RPM turntable platter swish, needle crackle & phono warmth",
+            dspMethodDescription = "6.6kHz Phono Curve + 33.3 RPM Pink Groove Noise (22%) + Resonant Needle Crackle",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "conv_vinyl_lofi",
+                presetName = "Vinyl Lo-Fi",
+                masterIntensity = 0.84f,
+                lowPassCutoffHz = 6600f,
+                highPassCutoffHz = 45f,
+                analogSaturation = 0.25f,
+                vinylCrackle = 0.24f,
+                vinylNoise = 0.22f,
+                tapeHiss = 0.04f,
+                wowFlutterDepth = 0.14f,
+                warmBassBoostDb = 1.8f,
+                stereoWidth = 0.96f
+            )
+        ),
+
+        // ---------------- PHONK (4) ----------------
+        MusicConverterPreset(
+            id = "conv_drift_phonk",
+            name = "Drift Phonk Inspired",
+            category = ConverterCategory.PHONK,
+            subtitle = "Memphis tape grit, 850Hz cowbell transient focus, punchy 62Hz bass & saturation",
+            dspMethodDescription = "Harmonic Waveshaping (58%) + 850Hz/1.6kHz Midrange Peaking + +4.5dB Low-End Punch + Bus Compression",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.BASS_BOOST,
+                presetId = "conv_drift_phonk",
+                presetName = "Drift Phonk Inspired",
+                masterIntensity = 0.88f,
+                lowPassCutoffHz = 9500f,
+                highPassCutoffHz = 36f,
+                bitDepth = 13.5f,
+                sampleRateDivisor = 1.25f,
+                analogSaturation = 0.58f,
+                softDistortion = 0.32f,
+                tapeHiss = 0.08f,
+                warmBassBoostDb = 4.5f,
+                midrangeGainDb = 3.5f,
+                softCompression = 0.45f,
+                reverbMix = 0.10f,
+                stereoWidth = 1.12f
+            ),
+            eqBandGainsDb = listOf(3.5f, 4.5f, 2.0f, -1.5f, 2.5f, 4.2f, 3.0f, 1.0f, -1.0f, -2.0f),
+            cowbellResonanceAmount = 0.45f
+        ),
+        MusicConverterPreset(
+            id = "conv_brazilian_phonk",
+            name = "Brazilian Phonk Inspired",
+            category = ConverterCategory.PHONK,
+            subtitle = "Aggressive rhythmic transient punch, clipped sub-bass & crisp upper-mid bite",
+            dspMethodDescription = "Hard-Knee Transient Clipper + 125Hz Kick Punch (+5.0dB) + 2kHz Bite + 12-Bit Crunch",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.BASS_BOOST,
+                presetId = "conv_brazilian_phonk",
+                presetName = "Brazilian Phonk Inspired",
+                masterIntensity = 0.90f,
+                lowPassCutoffHz = 11000f,
+                highPassCutoffHz = 42f,
+                bitDepth = 12.5f,
+                sampleRateDivisor = 1.35f,
+                analogSaturation = 0.65f,
+                softDistortion = 0.42f,
+                warmBassBoostDb = 5.0f,
+                midrangeGainDb = 4.0f,
+                softCompression = 0.55f,
+                playbackSpeed = 1.04f
+            ),
+            eqBandGainsDb = listOf(4.0f, 5.2f, 3.5f, -2.0f, 1.5f, 4.5f, 4.0f, 2.0f, 0.0f, -1.5f),
+            cowbellResonanceAmount = 0.55f
+        ),
+        MusicConverterPreset(
+            id = "conv_dark_phonk",
+            name = "Dark Phonk Inspired",
+            category = ConverterCategory.PHONK,
+            subtitle = "Pitched-down underground cassette atmosphere, heavy sub-bass & dark filter",
+            dspMethodDescription = "0.91x Tape Pitch/Speed + 4.8kHz Dark LPF + Sub-Harmonic Weight + Cassette Saturation",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.DEEP_BASS,
+                presetId = "conv_dark_phonk",
+                presetName = "Dark Phonk Inspired",
+                masterIntensity = 0.88f,
+                lowPassCutoffHz = 4800f,
+                highPassCutoffHz = 30f,
+                bitDepth = 13.0f,
+                sampleRateDivisor = 1.4f,
+                analogSaturation = 0.52f,
+                softDistortion = 0.28f,
+                tapeHiss = 0.12f,
+                wowFlutterDepth = 0.16f,
+                warmBassBoostDb = 4.8f,
+                reverbMix = 0.24f,
+                reverbRoomSize = 0.72f,
+                playbackSpeed = 0.91f,
+                pitchSemitones = -1.6f
+            ),
+            eqBandGainsDb = listOf(4.8f, 4.5f, 2.5f, 0.0f, 1.5f, 2.2f, -1.5f, -3.5f, -5.0f, -6.0f),
+            subHarmonicAmount = 0.40f
+        ),
+        MusicConverterPreset(
+            id = "conv_aggressive_phonk",
+            name = "Aggressive Phonk Inspired",
+            category = ConverterCategory.PHONK,
+            subtitle = "High-drive analog overdrive, heavy 808 sub-shelf & sharp midrange presence",
+            dspMethodDescription = "Overdrive Saturator (72%) + 11.5-Bit Decimation + +5.5dB Bass Shelf + True-Peak Limiter",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.BASS_BOOST,
+                presetId = "conv_aggressive_phonk",
+                presetName = "Aggressive Phonk Inspired",
+                masterIntensity = 0.92f,
+                lowPassCutoffHz = 10500f,
+                highPassCutoffHz = 38f,
+                bitDepth = 11.5f,
+                sampleRateDivisor = 1.5f,
+                analogSaturation = 0.72f,
+                softDistortion = 0.48f,
+                warmBassBoostDb = 5.5f,
+                midrangeGainDb = 4.2f,
+                softCompression = 0.60f
+            ),
+            eqBandGainsDb = listOf(4.5f, 5.5f, 3.0f, -1.0f, 2.8f, 5.0f, 3.8f, 1.5f, -0.5f, -2.0f),
+            cowbellResonanceAmount = 0.60f
+        ),
+
+        // ---------------- BASS (5) ----------------
+        MusicConverterPreset(
+            id = "conv_bass_boost",
+            name = "Bass Boost",
+            category = ConverterCategory.BASS,
+            subtitle = "Clean, punchy +4.5 dB low-end reinforcement with anti-clipping headroom",
+            dspMethodDescription = "95Hz Low-Shelf (+4.5dB) + Warm Harmonic Exciter + Clear Vocal Midrange Preservation",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.BASS_BOOST,
+                presetId = "conv_bass_boost",
+                presetName = "Bass Boost",
+                masterIntensity = 0.85f,
+                lowPassCutoffHz = 16500f,
+                highPassCutoffHz = 24f,
+                analogSaturation = 0.20f,
+                warmBassBoostDb = 4.5f,
+                softCompression = 0.18f
+            ),
+            eqBandGainsDb = listOf(3.8f, 4.5f, 3.0f, 0.8f, 0.0f, 0.4f, 0.8f, 0.6f, 0.4f, 0.0f)
+        ),
+        MusicConverterPreset(
+            id = "conv_deep_bass",
+            name = "Deep Bass",
+            category = ConverterCategory.BASS,
+            subtitle = "Extended 55Hz sub-bass depth with rich theater low-end contour",
+            dspMethodDescription = "55Hz Sub-Shelf (+5.2dB) + Sub-Harmonic Synthesizer (35%) + 250Hz Mud Cut (-1.8dB)",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.DEEP_BASS,
+                presetId = "conv_deep_bass",
+                presetName = "Deep Bass",
+                masterIntensity = 0.88f,
+                lowPassCutoffHz = 15000f,
+                highPassCutoffHz = 22f,
+                analogSaturation = 0.24f,
+                warmBassBoostDb = 5.2f,
+                softCompression = 0.22f
+            ),
+            eqBandGainsDb = listOf(5.2f, 4.8f, 2.2f, -1.8f, -0.5f, 0.5f, 1.0f, 0.8f, 0.4f, 0.0f),
+            subHarmonicAmount = 0.35f
+        ),
+        MusicConverterPreset(
+            id = "conv_ultra_bass",
+            name = "Ultra Bass",
+            category = ConverterCategory.BASS,
+            subtitle = "Maximum controlled subwoofer slam with dynamic soft-knee peak limiting",
+            dspMethodDescription = "+6.0dB Dual Low-Shelf + Sub-Harmonic Exciter (50%) + Active True-Peak Ceiling Limiter",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.DEEP_BASS,
+                presetId = "conv_ultra_bass",
+                presetName = "Ultra Bass",
+                masterIntensity = 0.92f,
+                lowPassCutoffHz = 14500f,
+                highPassCutoffHz = 22f,
+                analogSaturation = 0.32f,
+                warmBassBoostDb = 6.0f,
+                softCompression = 0.30f
+            ),
+            eqBandGainsDb = listOf(6.0f, 5.6f, 3.4f, -1.5f, 0.0f, 0.8f, 1.2f, 0.8f, 0.2f, 0.0f),
+            subHarmonicAmount = 0.50f
+        ),
+        MusicConverterPreset(
+            id = "conv_punchy_bass",
+            name = "Punchy Bass",
+            category = ConverterCategory.BASS,
+            subtitle = "Tight 90Hz–125Hz kick & bass guitar attack with zero sub-rumble bloat",
+            dspMethodDescription = "38Hz Tight High-Pass + +4.8dB 110Hz Peaking Punch + Fast Transient Envelope",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.BASS_BOOST,
+                presetId = "conv_punchy_bass",
+                presetName = "Punchy Bass",
+                masterIntensity = 0.84f,
+                lowPassCutoffHz = 16800f,
+                highPassCutoffHz = 38f,
+                analogSaturation = 0.22f,
+                warmBassBoostDb = 4.2f,
+                midrangeGainDb = 1.0f,
+                softCompression = 0.20f
+            ),
+            eqBandGainsDb = listOf(1.5f, 4.6f, 4.8f, 1.2f, -0.8f, 0.6f, 1.4f, 1.0f, 0.5f, 0.0f)
+        ),
+        MusicConverterPreset(
+            id = "conv_sub_bass",
+            name = "Sub Bass",
+            category = ConverterCategory.BASS,
+            subtitle = "Focused 31Hz–62Hz sub-octave rumble with clean, uncolored midrange",
+            dspMethodDescription = "Octave-Divided Sub-Harmonic Generator (45%) + +5.5dB 31Hz/62Hz Sub Filter",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.DEEP_BASS,
+                presetId = "conv_sub_bass",
+                presetName = "Sub Bass",
+                masterIntensity = 0.86f,
+                lowPassCutoffHz = 16000f,
+                highPassCutoffHz = 20f,
+                analogSaturation = 0.18f,
+                warmBassBoostDb = 5.0f,
+                softCompression = 0.20f
+            ),
+            eqBandGainsDb = listOf(5.8f, 4.5f, 1.0f, -1.0f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f),
+            subHarmonicAmount = 0.45f
+        ),
+
+        // ---------------- OTHER STYLES (8) ----------------
+        MusicConverterPreset(
+            id = "conv_slowed_reverb",
+            name = "Slowed + Reverb",
+            category = ConverterCategory.OTHER_STYLES,
+            subtitle = "0.86x analog tape speed & pitch (-2.6 semitones) drenched in lush hall reverb",
+            dspMethodDescription = "0.86x Resampled Pitch/Speed + 38% Lush Schroeder Hall Reverb + 7.8kHz Warm LPF",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.DREAMY_SOUND,
+                presetId = "conv_slowed_reverb",
+                presetName = "Slowed + Reverb",
+                masterIntensity = 0.88f,
+                lowPassCutoffHz = 7800f,
+                analogSaturation = 0.18f,
+                warmBassBoostDb = 2.4f,
+                reverbMix = 0.38f,
+                reverbRoomSize = 0.84f,
+                stereoWidth = 1.25f,
+                playbackSpeed = 0.86f,
+                pitchSemitones = -2.6f
+            )
+        ),
+        MusicConverterPreset(
+            id = "conv_nightcore",
+            name = "Nightcore",
+            category = ConverterCategory.OTHER_STYLES,
+            subtitle = "1.22x energetic tempo & pitch (+3.4 semitones) with crisp high-shelf sparkle",
+            dspMethodDescription = "1.22x Up-Sampled Pitch/Tempo + +2.5dB High Sparkle + Punchy 105Hz Low-Shelf",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.BASS_BOOST,
+                presetId = "conv_nightcore",
+                presetName = "Nightcore",
+                masterIntensity = 0.85f,
+                lowPassCutoffHz = 17800f,
+                highPassCutoffHz = 32f,
+                analogSaturation = 0.14f,
+                warmBassBoostDb = 2.5f,
+                trebleGainDb = 2.5f,
+                highFreqReductionDb = 0f,
+                playbackSpeed = 1.22f,
+                pitchSemitones = 3.4f
+            ),
+            eqBandGainsDb = listOf(2.0f, 3.0f, 1.5f, 0.0f, 0.5f, 1.5f, 2.2f, 2.8f, 3.0f, 2.5f)
+        ),
+        MusicConverterPreset(
+            id = "conv_8d_audio",
+            name = "8D Audio",
+            category = ConverterCategory.OTHER_STYLES,
+            subtitle = "Continuous 360° binaural orbit around your head with spatial room reflections",
+            dspMethodDescription = "8D Ultra Quadrature Azimuth Panner (0.15Hz) + ITD Delay + Rear Shadow + Spatial Reverb",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.EIGHT_D_ULTRA,
+                presetId = "conv_8d_audio",
+                presetName = "8D Audio",
+                masterIntensity = 0.90f,
+                lowPassCutoffHz = 16500f,
+                reverbMix = 0.24f,
+                reverbRoomSize = 0.72f,
+                spatialIntensity = 0.85f,
+                eightDRotationSpeedHz = 0.15f,
+                stereoWidth = 1.30f
+            )
+        ),
+        MusicConverterPreset(
+            id = "conv_3d_spatial",
+            name = "3D Spatial",
+            category = ConverterCategory.OTHER_STYLES,
+            subtitle = "Binaural spherical-head HRTF rendering with elevation & front/rear depth cues",
+            dspMethodDescription = "Woodworth Spherical-Head ITD + Head-Shadow ILD + 7.2kHz Pinna Notch + Early Reflections",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.THREE_D_SPATIAL,
+                presetId = "conv_3d_spatial",
+                presetName = "3D Spatial",
+                masterIntensity = 0.90f,
+                lowPassCutoffHz = 17000f,
+                reverbMix = 0.18f,
+                reverbRoomSize = 0.64f,
+                spatialIntensity = 0.85f,
+                spatialDistance = 0.35f,
+                spatialElevationDeg = 18f,
+                spatialAutoOrbit = true
+            )
+        ),
+        MusicConverterPreset(
+            id = "conv_echo",
+            name = "Echo",
+            category = ConverterCategory.OTHER_STYLES,
+            subtitle = "Rhythmic stereo tape delay (310ms) with warm feedback repeats & spacious trail",
+            dspMethodDescription = "310ms Cross-Ping-Pong Fractional Delay Line (38% Mix, 42% Damped Feedback) + Room Reverb",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.DREAMY_SOUND,
+                presetId = "conv_echo",
+                presetName = "Echo",
+                masterIntensity = 0.85f,
+                lowPassCutoffHz = 12000f,
+                echoMix = 0.38f,
+                echoDelayMs = 310f,
+                echoFeedback = 0.42f,
+                reverbMix = 0.20f,
+                stereoWidth = 1.20f
+            )
+        ),
+        MusicConverterPreset(
+            id = "conv_retro_vintage",
+            name = "Retro/Vintage",
+            category = ConverterCategory.OTHER_STYLES,
+            subtitle = "1970s reel-to-reel & AM radio warmth, band-limited 4.6kHz highs & analog saturation",
+            dspMethodDescription = "110Hz High-Pass + 4.6kHz Vintage LPF + 12-Bit Sampler Warmth + Tape Flutter + Vinyl Crackle",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "conv_retro_vintage",
+                presetName = "Retro/Vintage",
+                masterIntensity = 0.86f,
+                lowPassCutoffHz = 4600f,
+                highPassCutoffHz = 110f,
+                bitDepth = 12.5f,
+                sampleRateDivisor = 1.4f,
+                analogSaturation = 0.38f,
+                vinylCrackle = 0.18f,
+                vinylNoise = 0.16f,
+                tapeHiss = 0.10f,
+                wowFlutterDepth = 0.20f,
+                midrangeGainDb = 2.4f,
+                stereoWidth = 0.78f
+            )
+        ),
+        MusicConverterPreset(
+            id = "conv_treble_boost",
+            name = "Treble Boost",
+            category = ConverterCategory.OTHER_STYLES,
+            subtitle = "Crisp acoustic guitar, hi-hat & air band brilliance (4.5kHz–16kHz)",
+            dspMethodDescription = "+4.2dB 4.5kHz High-Shelf + 8kHz/16kHz Air Peaking EQ + Tight Sub High-Pass",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.CLEAR_VOCAL,
+                presetId = "conv_treble_boost",
+                presetName = "Treble Boost",
+                masterIntensity = 0.82f,
+                lowPassCutoffHz = 18000f,
+                highPassCutoffHz = 40f,
+                trebleGainDb = 4.2f,
+                highFreqReductionDb = 0f,
+                midrangeGainDb = 1.2f
+            ),
+            eqBandGainsDb = listOf(-1.0f, -0.5f, 0.0f, 0.5f, 1.0f, 1.8f, 2.8f, 3.8f, 4.5f, 4.2f)
+        ),
+        MusicConverterPreset(
+            id = "conv_vocal_focus",
+            name = "Vocal Focus",
+            category = ConverterCategory.OTHER_STYLES,
+            subtitle = "Studio vocal intelligibility with 2.4kHz presence boost & low-mid mud removal",
+            dspMethodDescription = "95Hz High-Pass + -2.5dB 220Hz Mud Cut + +3.8dB 1.8kHz–3.2kHz Presence + Gentle Bus Glue",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.CLEAR_VOCAL,
+                presetId = "conv_vocal_focus",
+                presetName = "Vocal Focus",
+                masterIntensity = 0.85f,
+                lowPassCutoffHz = 16500f,
+                highPassCutoffHz = 95f,
+                warmBassBoostDb = -1.2f,
+                midrangeGainDb = 3.8f,
+                trebleGainDb = 1.5f,
+                softCompression = 0.24f,
+                stereoWidth = 0.95f
+            ),
+            eqBandGainsDb = listOf(-3.0f, -2.0f, -1.5f, -2.2f, 1.5f, 3.6f, 4.0f, 2.8f, 1.2f, 0.5f)
+        )
+    )
+}
+
 

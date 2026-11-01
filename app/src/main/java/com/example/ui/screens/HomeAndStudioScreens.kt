@@ -82,12 +82,15 @@ import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.PlaybackHistoryEntity
 import com.example.model.AiMoodRecommendation
+import com.example.model.AmbientLayerType
 import com.example.model.BuiltInLofiPresets
 import com.example.model.LibraryFilterTab
+import com.example.model.LiveSoundMode
 import com.example.model.LofiDspParameters
 import com.example.model.LofiPreset
 import com.example.model.MusicMoodAnalysisResult
 import com.example.model.TrackItem
+import com.example.model.VisualizerMode
 import com.example.model.VisualizerSnapshot
 import com.example.ui.components.HifiLofiModeToggleBanner
 import com.example.ui.components.OriginalLofiSegmentedControl
@@ -146,7 +149,12 @@ fun HomeScreen(
     onNavigateToStudio: () -> Unit,
     onOpenSettings: () -> Unit = {},
     onOpenLibraryCollection: (LibraryFilterTab) -> Unit = {},
-    onExpandNowPlaying: () -> Unit
+    onExpandNowPlaying: () -> Unit,
+    ambientLayerVolumes: Map<AmbientLayerType, Float> = emptyMap(),
+    onSelectSoundMode: (LiveSoundMode) -> Unit = {},
+    onOpenMusicConverter: () -> Unit = {},
+    onChangeAmbientVolume: (AmbientLayerType, Float) -> Unit = { _, _ -> },
+    onStopAllAmbient: () -> Unit = {}
 ) {
     val activeTrack = currentTrack ?: allTracks.firstOrNull()
     val isFavorite = activeTrack?.id in favoriteIds
@@ -586,6 +594,91 @@ fun HomeScreen(
                     onToggleMode = onToggleLofiMode,
                     testTagPrefix = "home_mode"
                 )
+
+                // Dedicated 10-Mode Live Sound Modes Panel (Original, Live Lo-Fi, 8D Ultra, 3D Spatial, Surround, Bass, Vocal, Dreamy)
+                LiveSoundModesSelectorSection(
+                    dspParams = dspParams,
+                    onSelectSoundMode = onSelectSoundMode
+                )
+            }
+        }
+
+        // 3B. PROMINENT HOME SCREEN "MUSIC CONVERTER" STUDIO BUTTON (Part 3)
+        item {
+            Surface(
+                color = ElevatedCharcoal,
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.5.dp,
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(ElectricPurple, NeonCyan, StudioEmerald)
+                        ),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    .clickable { onOpenMusicConverter() }
+                    .testTag("home_music_converter_button")
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    Brush.linearGradient(listOf(ElectricPurple, NeonCyan))
+                                )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GraphicEq,
+                                contentDescription = "Music Converter",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = "MUSIC CONVERTER",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Convert & Export Songs: Lo-Fi • Phonk • Bass • Slowed+Reverb • Nightcore • 8D/3D",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = NeonCyan,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(ElectricPurple)
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "OPEN →",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
             }
         }
 
@@ -894,7 +987,40 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    CollectionMinimalCard(
+                        title = "Converted Songs",
+                        subtitle = "Saved WAV exports",
+                        icon = Icons.Default.GraphicEq,
+                        accent = AnalogAmber,
+                        onClick = { onOpenLibraryCollection(LibraryFilterTab.CONVERTED_SONGS) },
+                        testTag = "collection_converted_songs",
+                        modifier = Modifier.weight(1f)
+                    )
+                    CollectionMinimalCard(
+                        title = "Music Converter",
+                        subtitle = "22 Style Presets",
+                        icon = Icons.Default.AutoAwesome,
+                        accent = NeonCyan,
+                        onClick = onOpenMusicConverter,
+                        testTag = "collection_open_converter",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
+        }
+
+        // 5B. AMBIENT SOUND MIXER ON HOME SCREEN (Rain, Ocean, Wind, Night, Birds, Thunderstorm)
+        item {
+            AmbientSoundMixerSection(
+                layerVolumes = ambientLayerVolumes,
+                onChangeLayerVolume = onChangeAmbientVolume,
+                onStopAll = onStopAllAmbient
+            )
         }
 
         // 6. CLEAN TRACK LIST PREVIEW (Uncrowded with Generous Whitespace)
@@ -1098,12 +1224,66 @@ fun LofiStudioScreen(
     onSelectPreset: (LofiPreset) -> Unit,
     onUpdateDsp: ((LofiDspParameters) -> LofiDspParameters) -> Unit,
     onSaveCustomPreset: (String, String, String) -> Unit,
-    onDeleteCustomPreset: (String) -> Unit
+    onDeleteCustomPreset: (String) -> Unit,
+    visualizerMode: VisualizerMode = VisualizerMode.SPECTRUM_BARS,
+    onSelectVisualizerMode: (VisualizerMode) -> Unit = {},
+    onSelectSoundMode: (LiveSoundMode) -> Unit = {},
+    onRenameCustomPreset: (String, String, String) -> Unit = { _, _, _ -> },
+    onResetAudioEditor: () -> Unit = {}
 ) {
     var showSaveDialog by remember { mutableStateOf(false) }
     var customName by remember { mutableStateOf("") }
     var customSubtitle by remember { mutableStateOf("Custom Studio DSP Configuration") }
     var customCategory by remember { mutableStateOf("Custom Studio") }
+
+    var presetToRename by remember { mutableStateOf<LofiPreset?>(null) }
+    var renameTitleInput by remember { mutableStateOf("") }
+    var renameSubtitleInput by remember { mutableStateOf("") }
+
+    if (presetToRename != null) {
+        val target = presetToRename!!
+        AlertDialog(
+            onDismissRequest = { presetToRename = null },
+            containerColor = ElevatedCharcoal,
+            title = {
+                Text("Rename Custom Preset", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = renameTitleInput,
+                        onValueChange = { renameTitleInput = it },
+                        label = { Text("New Preset Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = renameSubtitleInput,
+                        onValueChange = { renameSubtitleInput = it },
+                        label = { Text("Description / Notes") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRenameCustomPreset(target.id, renameTitleInput, renameSubtitleInput)
+                        presetToRename = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricPurple)
+                ) {
+                    Text("Rename")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { presetToRename = null }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            }
+        )
+    }
 
     if (showSaveDialog) {
         AlertDialog(
@@ -1179,7 +1359,7 @@ fun LofiStudioScreen(
                         color = TextPrimary
                     )
                     Text(
-                        text = "16-Stage Real-Time PCM Audio Processing Rack",
+                        text = "Professional Real-Time Audio Editor & Spatial DSP Rack",
                         style = MaterialTheme.typography.bodySmall,
                         color = NeonCyan
                     )
@@ -1187,8 +1367,7 @@ fun LofiStudioScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
-                            val defaultPreset = BuiltInLofiPresets.ALL.first { it.id == "soft_lofi" }
-                            onSelectPreset(defaultPreset)
+                            onResetAudioEditor()
                         },
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                         modifier = Modifier.testTag("reset_to_default_button")
@@ -1260,13 +1439,28 @@ fun LofiStudioScreen(
             }
         }
 
-        // Real-Time Visualizer + Phase 6 Audio Quality Telemetry (Peak, RMS, Clipping, DC Offset, Balance, Underruns, Latency)
+        // Real-Time Visualizer (4 Modes) + Phase 6 Audio Quality Telemetry
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    VisualizerMode.entries.forEach { vMode ->
+                        androidx.compose.material3.FilterChip(
+                            selected = visualizerMode == vMode,
+                            onClick = { onSelectVisualizerMode(vMode) },
+                            label = { Text(vMode.displayName, style = MaterialTheme.typography.labelSmall) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
                 RealTimeAudioVisualizer(
                     snapshot = visualizerSnapshot,
                     isPlaying = isPlaying,
                     isLofiMode = dspParams.isLiveLofiEnabled,
+                    visualizerMode = visualizerMode,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(104.dp)
@@ -1444,14 +1638,28 @@ fun LofiStudioScreen(
                                         maxLines = 1
                                     )
                                     if (preset.isCustom) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Delete Custom Preset",
-                                            tint = VinylRose,
-                                            modifier = Modifier
-                                                .size(16.dp)
-                                                .clickable { onDeleteCustomPreset(preset.id) }
-                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(
+                                                text = "Rename",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = NeonCyan,
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        renameTitleInput = preset.name
+                                                        renameSubtitleInput = preset.subtitle
+                                                        presetToRename = preset
+                                                    }
+                                                    .testTag("rename_custom_preset_${preset.id}")
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete Custom Preset",
+                                                tint = VinylRose,
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .clickable { onDeleteCustomPreset(preset.id) }
+                                            )
+                                        }
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
@@ -1508,6 +1716,15 @@ fun LofiStudioScreen(
                     accentColor = ElectricPurple,
                     testTag = "slider_warm_bass",
                     onValueChange = { v -> onUpdateDsp { it.copy(warmBassBoostDb = v, isLiveLofiEnabled = true) } }
+                )
+                DspParameterSlider(
+                    label = "Midrange Control (1.1kHz Vocal & Presence Peak)",
+                    valueText = String.format(Locale.US, "%+.1f dB", dspParams.midrangeGainDb),
+                    value = dspParams.midrangeGainDb,
+                    valueRange = -8f..8f,
+                    accentColor = NeonCyan,
+                    testTag = "slider_midrange_gain",
+                    onValueChange = { v -> onUpdateDsp { it.copy(midrangeGainDb = v, isLiveLofiEnabled = true) } }
                 )
                 DspParameterSlider(
                     label = "Treble Control (4.5kHz High Shelf)",
@@ -1754,7 +1971,7 @@ fun LofiStudioScreen(
                     onValueChange = { v -> onUpdateDsp { it.copy(softCompression = v) } }
                 )
                 DspParameterSlider(
-                    label = "Tape Playback Speed & Pitch",
+                    label = "Tape Playback Speed",
                     valueText = String.format(Locale.US, "%.2fx", dspParams.playbackSpeed),
                     value = dspParams.playbackSpeed,
                     valueRange = 0.65f..1.35f,
@@ -1762,7 +1979,52 @@ fun LofiStudioScreen(
                     testTag = "slider_playback_speed",
                     onValueChange = { v -> onUpdateDsp { it.copy(playbackSpeed = v) } }
                 )
+                DspParameterSlider(
+                    label = "Pitch Shift (Semitones)",
+                    valueText = String.format(Locale.US, "%+.1f st", dspParams.pitchSemitones),
+                    value = dspParams.pitchSemitones,
+                    valueRange = -12f..12f,
+                    accentColor = ElectricPurpleBright,
+                    testTag = "slider_pitch_semitones",
+                    onValueChange = { v -> onUpdateDsp { it.copy(pitchSemitones = v, isLiveLofiEnabled = true) } }
+                )
+                DspParameterSlider(
+                    label = "Echo / Ping-Pong Delay Mix",
+                    valueText = "${(dspParams.echoMix * 100).toInt()}%",
+                    value = dspParams.echoMix,
+                    valueRange = 0f..0.85f,
+                    accentColor = NeonCyan,
+                    testTag = "slider_echo_mix",
+                    onValueChange = { v -> onUpdateDsp { it.copy(echoMix = v, isLiveLofiEnabled = true) } }
+                )
+                DspParameterSlider(
+                    label = "Echo Delay Time",
+                    valueText = "${dspParams.echoDelayMs.toInt()} ms",
+                    value = dspParams.echoDelayMs,
+                    valueRange = 80f..750f,
+                    accentColor = NeonCyan,
+                    testTag = "slider_echo_delay_ms",
+                    onValueChange = { v -> onUpdateDsp { it.copy(echoDelayMs = v, isLiveLofiEnabled = true) } }
+                )
+                DspParameterSlider(
+                    label = "Spatial / 8D / 3D HRTF Intensity",
+                    valueText = "${(dspParams.spatialIntensity * 100).toInt()}%",
+                    value = dspParams.spatialIntensity,
+                    valueRange = 0f..1f,
+                    accentColor = StudioEmerald,
+                    testTag = "slider_studio_spatial_intensity",
+                    onValueChange = { v -> onUpdateDsp { it.copy(spatialIntensity = v) } }
+                )
             }
+        }
+
+        // RACK 6: 10 Live Sound Modes Selector inside Studio
+        item {
+            LiveSoundModesSelectorSection(
+                dspParams = dspParams,
+                onSelectSoundMode = onSelectSoundMode,
+                onUpdateDsp = onUpdateDsp
+            )
         }
     }
 }

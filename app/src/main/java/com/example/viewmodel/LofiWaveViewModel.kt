@@ -17,6 +17,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.audio.AudioEngineBridge
+import com.example.audio.MusicConverterEngine
 import com.example.audio.MusicMoodAnalyzer
 import com.example.audio.StudioWavGenerator
 import com.example.data.CustomEqPresetEntity
@@ -30,14 +31,22 @@ import com.example.data.PlaylistEntity
 import com.example.data.PlaylistTrackCrossRef
 import com.example.data.UserPreferencesRepository
 import com.example.model.AiMoodRecommendation
+import com.example.model.AmbientLayerType
+import com.example.model.BuiltInConverterPresets
 import com.example.model.BuiltInLofiPresets
+import com.example.model.ConverterCategory
 import com.example.model.EqualizerState
+import com.example.model.ExportProgressState
+import com.example.model.ExportQualityOption
 import com.example.model.LibraryFilterTab
 import com.example.model.LibrarySortOrder
+import com.example.model.LiveSoundMode
 import com.example.model.LofiDspParameters
 import com.example.model.LofiPreset
+import com.example.model.MusicConverterPreset
 import com.example.model.MusicMoodAnalysisResult
 import com.example.model.TrackItem
+import com.example.model.VisualizerMode
 import com.example.model.VisualizerSnapshot
 import com.example.service.LofiPlaybackService
 import com.example.ui.theme.AccentTheme
@@ -116,14 +125,42 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     val eqState: StateFlow<EqualizerState> = _eqState.asStateFlow()
 
     // Theme & Preferences
-    private val _accentTheme = MutableStateFlow(AccentTheme.ELECTRIC_PURPLE)
+    private val _accentTheme = MutableStateFlow(AccentTheme.ANIME_LOFI_NIGHT)
     val accentTheme: StateFlow<AccentTheme> = _accentTheme.asStateFlow()
 
-    private val _pureAmoledBlack = MutableStateFlow(true)
+    private val _pureAmoledBlack = MutableStateFlow(false)
     val pureAmoledBlack: StateFlow<Boolean> = _pureAmoledBlack.asStateFlow()
 
     private val _highQualityDecoding = MutableStateFlow(true)
     val highQualityDecoding: StateFlow<Boolean> = _highQualityDecoding.asStateFlow()
+
+    // Visualizer Mode (Spectrum Bars, Waveform, Circular, 3D Audio Stage)
+    private val _visualizerMode = MutableStateFlow(VisualizerMode.SPECTRUM_BARS)
+    val visualizerMode: StateFlow<VisualizerMode> = _visualizerMode.asStateFlow()
+
+    // Ambient Sound Mixer (6 simultaneous stereo background soundscapes)
+    val ambientLayerVolumes: StateFlow<Map<AmbientLayerType, Float>> =
+        AudioEngineBridge.ambientSoundEngine.layerVolumes
+
+    // Music Style Converter & Export Engine State
+    private val _selectedConverterCategory = MutableStateFlow(ConverterCategory.LOFI)
+    val selectedConverterCategory: StateFlow<ConverterCategory> = _selectedConverterCategory.asStateFlow()
+
+    private val _selectedConverterPreset = MutableStateFlow(BuiltInConverterPresets.ALL.first())
+    val selectedConverterPreset: StateFlow<MusicConverterPreset> = _selectedConverterPreset.asStateFlow()
+
+    private val _converterIntensity = MutableStateFlow(0.82f)
+    val converterIntensity: StateFlow<Float> = _converterIntensity.asStateFlow()
+
+    private val _isConverterBeforeOriginalPreview = MutableStateFlow(false)
+    val isConverterBeforeOriginalPreview: StateFlow<Boolean> = _isConverterBeforeOriginalPreview.asStateFlow()
+
+    private val _selectedExportQuality = MutableStateFlow(ExportQualityOption.WAV_44_1_KHZ)
+    val selectedExportQuality: StateFlow<ExportQualityOption> = _selectedExportQuality.asStateFlow()
+
+    private val _exportProgressState = MutableStateFlow(ExportProgressState())
+    val exportProgressState: StateFlow<ExportProgressState> = _exportProgressState.asStateFlow()
+    private var exportJob: Job? = null
 
     // Sleep Timer
     private val _sleepTimerRemainingSec = MutableStateFlow<Int?>(null)
@@ -175,6 +212,16 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
         mapByUri.values.toList()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Converted Songs list
+    val convertedTracks: StateFlow<List<TrackItem>> = allTracks
+        .combine(MutableStateFlow(Unit)) { tracks, _ ->
+            tracks.filter {
+                it.folderName.equals("Converted Songs", ignoreCase = true) ||
+                    it.id.startsWith("converted_")
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Filtered & Sorted Library Tracks
     val filteredLibraryTracks: StateFlow<List<TrackItem>> = combine(
         allTracks,
@@ -186,6 +233,10 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
         var list = when (tab) {
             LibraryFilterTab.FAVORITES -> tracks.filter { it.id in favIds }
             LibraryFilterTab.RECENTLY_ADDED -> tracks.sortedByDescending { it.dateAddedMillis }
+            LibraryFilterTab.CONVERTED_SONGS -> tracks.filter {
+                it.folderName.equals("Converted Songs", ignoreCase = true) ||
+                    it.id.startsWith("converted_")
+            }
             else -> tracks
         }
         if (query.isNotBlank()) {
@@ -726,6 +777,235 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
             dao.deleteCustomLofiPreset(presetId)
             postBannerMessage("Deleted custom preset")
         }
+    }
+
+    fun renameCustomLofiPreset(presetId: String, newName: String, newSubtitle: String) {
+        val cleanName = newName.trim().ifEmpty { "Custom Studio Preset" }
+        val cleanSub = newSubtitle.trim().ifEmpty { "Custom user-engineered DSP chain" }
+        viewModelScope.launch {
+            dao.renameCustomLofiPreset(presetId, cleanName, cleanSub)
+            if (_dspParams.value.presetId == presetId) {
+                val updated = _dspParams.value.copy(presetName = cleanName)
+                _dspParams.value = updated
+                prefsRepo.saveDspParameters(updated)
+            }
+            postBannerMessage("Renamed preset to '$cleanName'")
+        }
+    }
+
+    fun resetAudioEditorToDefault() {
+        val defaultDsp = LofiDspParameters(
+            isLiveLofiEnabled = false,
+            soundMode = LiveSoundMode.ORIGINAL_STEREO,
+            presetId = "original",
+            presetName = "Original Stereo",
+            masterIntensity = 0f,
+            playbackSpeed = 1.0f,
+            pitchSemitones = 0f,
+            masterGainDb = 0f
+        )
+        val defaultEq = EqualizerState()
+        _dspParams.value = defaultDsp
+        _eqState.value = defaultEq
+        AudioEngineBridge.applyLofiParameters(defaultDsp)
+        AudioEngineBridge.applyEqualizerState(defaultEq)
+        viewModelScope.launch {
+            prefsRepo.saveDspParameters(defaultDsp)
+            prefsRepo.saveEqualizerState(defaultEq)
+        }
+        postBannerMessage("Reset all DSP, Spatial, and EQ parameters to flat Original Stereo")
+    }
+
+    // =========================================================================
+    // 10 LIVE SOUND MODES & 4 VISUALIZER MODES
+    // =========================================================================
+
+    fun setSoundMode(mode: LiveSoundMode) {
+        val current = _dspParams.value
+        val updated = when (mode) {
+            LiveSoundMode.ORIGINAL_STEREO -> current.copy(
+                soundMode = LiveSoundMode.ORIGINAL_STEREO,
+                isLiveLofiEnabled = false
+            )
+            LiveSoundMode.LIVE_LOFI -> {
+                val base = if (current.presetId == "original" || current.masterIntensity <= 0.01f) {
+                    BuiltInLofiPresets.ALL.firstOrNull { it.id == "soft_lofi" }?.parameters ?: LofiDspParameters()
+                } else {
+                    current
+                }
+                base.copy(
+                    soundMode = LiveSoundMode.LIVE_LOFI,
+                    isLiveLofiEnabled = true,
+                    masterGainDb = current.masterGainDb
+                )
+            }
+            else -> current.copy(
+                soundMode = mode,
+                spatialIntensity = current.spatialIntensity.coerceAtLeast(0.75f)
+            )
+        }
+        _dspParams.value = updated
+        AudioEngineBridge.applyLofiParameters(updated)
+        viewModelScope.launch {
+            prefsRepo.saveDspParameters(updated)
+        }
+        postBannerMessage("Sound Mode: ${mode.displayName} — ${mode.subtitle}")
+    }
+
+    fun setVisualizerMode(mode: VisualizerMode) {
+        _visualizerMode.value = mode
+    }
+
+    // =========================================================================
+    // AMBIENT SOUND MIXER (6 SIMULTANEOUS SOUNDSCAPES)
+    // =========================================================================
+
+    fun setAmbientLayerVolume(layer: AmbientLayerType, volume: Float) {
+        AudioEngineBridge.ambientSoundEngine.setLayerVolume(layer, volume)
+    }
+
+    fun stopAllAmbientSounds() {
+        AudioEngineBridge.ambientSoundEngine.stopAll()
+        postBannerMessage("Stopped all background ambient sound layers")
+    }
+
+    // =========================================================================
+    // MUSIC STYLE CONVERTER STUDIO & BACKGROUND WAV EXPORT ENGINE
+    // =========================================================================
+
+    fun selectConverterCategory(category: ConverterCategory) {
+        _selectedConverterCategory.value = category
+        val firstInCat = BuiltInConverterPresets.byCategory(category).firstOrNull()
+        if (firstInCat != null) {
+            selectConverterPreset(firstInCat, applyLivePreview = true)
+        }
+    }
+
+    fun selectConverterPreset(preset: MusicConverterPreset, applyLivePreview: Boolean = true) {
+        _selectedConverterPreset.value = preset
+        _selectedConverterCategory.value = preset.category
+        if (applyLivePreview) {
+            _isConverterBeforeOriginalPreview.value = false
+            applyConverterPresetToLivePlayer(preset, _converterIntensity.value)
+        }
+    }
+
+    fun setConverterIntensity(intensity: Float) {
+        val clamped = intensity.coerceIn(0.1f, 1.0f)
+        _converterIntensity.value = clamped
+        if (!_isConverterBeforeOriginalPreview.value) {
+            applyConverterPresetToLivePlayer(_selectedConverterPreset.value, clamped)
+        }
+    }
+
+    fun toggleConverterBeforeAfterPreview(showOriginalBefore: Boolean) {
+        _isConverterBeforeOriginalPreview.value = showOriginalBefore
+        if (showOriginalBefore) {
+            val bypass = _dspParams.value.copy(
+                isLiveLofiEnabled = false,
+                soundMode = LiveSoundMode.ORIGINAL_STEREO
+            )
+            AudioEngineBridge.applyLofiParameters(bypass)
+            postBannerMessage("Before (Original Unprocessed Song) Preview Active")
+        } else {
+            applyConverterPresetToLivePlayer(_selectedConverterPreset.value, _converterIntensity.value)
+            postBannerMessage("After (${_selectedConverterPreset.value.name}) Live Preview Active")
+        }
+    }
+
+    private fun applyConverterPresetToLivePlayer(preset: MusicConverterPreset, intensity: Float) {
+        val scaledDsp = preset.dspParameters.copy(
+            isLiveLofiEnabled = true,
+            masterIntensity = (preset.dspParameters.masterIntensity * (0.35f + 0.65f * intensity)).coerceIn(0.1f, 1.0f),
+            masterGainDb = _dspParams.value.masterGainDb
+        )
+        _dspParams.value = scaledDsp
+        AudioEngineBridge.applyLofiParameters(scaledDsp)
+
+        if (preset.eqBandGainsDb.any { it != 0f }) {
+            val updatedEq = _eqState.value.copy(
+                isEnabled = true,
+                presetName = preset.name,
+                bandGainsDb = preset.eqBandGainsDb
+            )
+            _eqState.value = updatedEq
+            AudioEngineBridge.applyEqualizerState(updatedEq)
+        }
+    }
+
+    fun setExportQuality(option: ExportQualityOption) {
+        _selectedExportQuality.value = option
+    }
+
+    fun exportCurrentSongWithConverter() {
+        val sourceTrack = _currentTrack.value ?: allTracks.value.firstOrNull()
+        if (sourceTrack == null) {
+            postBannerMessage("Select or import a song first to convert and export.")
+            return
+        }
+        if (_exportProgressState.value.isExporting) {
+            postBannerMessage("A conversion is already in progress.")
+            return
+        }
+
+        val preset = _selectedConverterPreset.value
+        val intensity = _converterIntensity.value
+        val quality = _selectedExportQuality.value
+        val eqSnapshot = _eqState.value
+        val customDspSnapshot = _dspParams.value
+
+        exportJob?.cancel()
+        exportJob = viewModelScope.launch {
+            runCatching {
+                val exportedTrack = MusicConverterEngine.convertAndExportTrack(
+                    context = appContext,
+                    sourceTrack = sourceTrack,
+                    preset = preset,
+                    intensity = intensity,
+                    customDspOverride = customDspSnapshot,
+                    eqState = eqSnapshot,
+                    qualityOption = quality,
+                    onProgress = { progressState ->
+                        _exportProgressState.value = progressState
+                    }
+                )
+                // Save converted track into Room DB so it permanently appears in Library -> Converted Songs
+                dao.insertImportedTracks(
+                    listOf(
+                        ImportedTrackEntity(
+                            id = exportedTrack.id,
+                            uriString = exportedTrack.uriString,
+                            title = exportedTrack.title,
+                            artist = exportedTrack.artist,
+                            album = exportedTrack.album,
+                            durationMs = exportedTrack.durationMs,
+                            formatBadge = exportedTrack.formatBadge,
+                            folderName = "Converted Songs",
+                            dateAddedMillis = exportedTrack.dateAddedMillis,
+                            albumArtUri = exportedTrack.albumArtUri,
+                            lyricsOrNotes = exportedTrack.lyricsOrNotes
+                        )
+                    )
+                )
+                postBannerMessage("Exported '${exportedTrack.title}' to Converted Songs!")
+            }.onFailure { err ->
+                if (err !is kotlinx.coroutines.CancellationException) {
+                    postBannerMessage("Export failed: ${err.localizedMessage ?: "Unknown error"}")
+                }
+            }
+        }
+    }
+
+    fun cancelExportConversion() {
+        exportJob?.cancel()
+        exportJob = null
+        _exportProgressState.value = ExportProgressState(
+            isExporting = false,
+            progressFraction = 0f,
+            statusText = "Conversion cancelled — original song untouched",
+            wasCancelled = true
+        )
+        postBannerMessage("Cancelled audio conversion")
     }
 
     // =========================================================================

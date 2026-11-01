@@ -525,7 +525,13 @@ fun LibraryScreen(
             else -> {
                 if (filteredTracks.isEmpty()) {
                     item {
-                        EmptyCollectionState("No matching songs found. Tap 'Import Songs' to pick MP3/WAV/FLAC files from your device.")
+                        EmptyCollectionState(
+                            if (selectedTab == LibraryFilterTab.CONVERTED_SONGS) {
+                                "No converted songs exported yet. Open Music Converter from Home to convert & save any song as WAV."
+                            } else {
+                                "No matching songs found. Tap 'Import Songs' to pick MP3/WAV/FLAC files from your device."
+                            }
+                        )
                     }
                 } else {
                     items(filteredTracks, key = { it.id }) { track ->

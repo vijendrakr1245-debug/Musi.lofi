@@ -390,8 +390,11 @@ fun SettingsScreen(
     onScanDeviceClick: () -> Unit,
     onClearHistory: () -> Unit,
     onOpenStudio: () -> Unit = {},
-    onOpenEqualizer: () -> Unit = {}
+    onOpenEqualizer: () -> Unit = {},
+    onOpenMusicConverter: () -> Unit = {}
 ) {
+    var previewedTheme by remember(accentTheme) { mutableStateOf(accentTheme) }
+
     LazyColumn(
         contentPadding = PaddingValues(bottom = 115.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -403,25 +406,25 @@ fun SettingsScreen(
         item {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "SETTINGS",
+                text = "SETTINGS & 12 STUDIO THEMES",
                 style = MaterialTheme.typography.headlineLarge,
                 color = TextPrimary
             )
             Text(
-                text = "Theme, Audio Tools, Sleep Timer & Music Library",
+                text = "12 Anime & Minimal Visual Themes, Audio Tools, Sleep Timer & Library",
                 style = MaterialTheme.typography.bodySmall,
                 color = NeonCyan
             )
         }
 
-        // Quick Access to Advanced Audio Tools (Lo-Fi Studio & 10-Band Equalizer)
+        // Quick Access to Advanced Audio Tools (Lo-Fi Studio, Music Converter & 10-Band Equalizer)
         item {
             StudioRackSection(
-                title = "ADVANCED AUDIO TOOLS",
-                subtitle = "Fine-tune real-time Lo-Fi DSP parameters and 10-band studio EQ"
+                title = "ADVANCED AUDIO STUDIO & CONVERTER TOOLS",
+                subtitle = "Fine-tune real-time Lo-Fi DSP parameters, 10-band EQ, or convert & export songs"
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Button(
@@ -431,7 +434,16 @@ fun SettingsScreen(
                             .weight(1f)
                             .testTag("settings_open_studio_button")
                     ) {
-                        Text("Lo-Fi DSP Studio", style = MaterialTheme.typography.labelLarge)
+                        Text("Lo-Fi Studio", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Button(
+                        onClick = onOpenMusicConverter,
+                        colors = ButtonDefaults.buttonColors(containerColor = StudioEmerald),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("settings_open_converter_button")
+                    ) {
+                        Text("Converter", style = MaterialTheme.typography.labelSmall, color = DeepObsidian)
                     }
                     OutlinedButton(
                         onClick = onOpenEqualizer,
@@ -439,60 +451,224 @@ fun SettingsScreen(
                             .weight(1f)
                             .testTag("settings_open_equalizer_button")
                     ) {
-                        Text("10-Band Equalizer", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+                        Text("10-Band EQ", style = MaterialTheme.typography.labelSmall, color = NeonCyan)
                     }
                 }
             }
         }
 
-
-        // Theme Settings
+        // PART 1: 12 COMPLETE PREMIUM THEMES WITH LIVE PREVIEW & APPLY BUTTON
         item {
             StudioRackSection(
-                title = "THEME & VISUAL AESTHETICS",
-                subtitle = "Customize neon studio accents & deep black surfaces"
+                title = "12 COMPLETE PREMIUM THEMES",
+                subtitle = "Preview wallpaper gradients, color palettes & player styling — persisted automatically"
             ) {
+                // Live Interactive Theme Preview Banner
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(previewedTheme.wallpaperTop, previewedTheme.wallpaperBottom)
+                            )
+                        )
+                        .border(1.5.dp, previewedTheme.primary, RoundedCornerShape(18.dp))
+                        .padding(16.dp)
+                        .testTag("theme_live_preview_card")
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "THEME PREVIEW: ${previewedTheme.label.uppercase()}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = previewedTheme.secondary
+                                )
+                                Text(
+                                    text = previewedTheme.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextPrimary
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(previewedTheme.surfaceBg)
+                                    .border(1.dp, previewedTheme.tertiary, RoundedCornerShape(50))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = previewedTheme.playerStyleBadge,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = previewedTheme.tertiary
+                                )
+                            }
+                        }
+
+                        // Simulated mini player styling preview bar
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(previewedTheme.cardBg)
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(previewedTheme.primary)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(previewedTheme.secondary)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(previewedTheme.tertiary)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = if (previewedTheme == accentTheme) "Currently Applied Theme" else "Tap Apply to Activate",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextPrimary
+                                )
+                            }
+
+                            Button(
+                                onClick = {
+                                    val useAmoled = previewedTheme == AccentTheme.AMOLED_BLACK || pureAmoledBlack
+                                    onUpdateThemePrefs(previewedTheme, useAmoled, highQualityDecoding)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = previewedTheme.primary),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("apply_previewed_theme_button")
+                            ) {
+                                Text(
+                                    text = if (previewedTheme == accentTheme) "Applied ✓" else "Apply Theme",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // All 12 Complete Themes List
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (theme in AccentTheme.entries) {
-                        val selected = theme == accentTheme
+                    for (theme in AccentTheme.PRIMARY_TWELVE) {
+                        val isApplied = theme == accentTheme
+                        val isPreviewed = theme == previewedTheme
                         Surface(
-                            color = if (selected) theme.primary.copy(alpha = 0.22f) else DeepObsidian,
+                            color = if (isApplied) theme.primary.copy(alpha = 0.22f) else theme.surfaceBg,
                             shape = RoundedCornerShape(14.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .border(
-                                    width = if (selected) 1.5.dp else 1.dp,
-                                    color = if (selected) theme.secondary else SubtleBorder,
+                                    width = if (isApplied || isPreviewed) 1.5.dp else 1.dp,
+                                    color = when {
+                                        isApplied -> theme.secondary
+                                        isPreviewed -> theme.primary
+                                        else -> SubtleBorder
+                                    },
                                     shape = RoundedCornerShape(14.dp)
                                 )
                                 .clickable {
-                                    onUpdateThemePrefs(theme, pureAmoledBlack, highQualityDecoding)
+                                    previewedTheme = theme
+                                    val useAmoled = theme == AccentTheme.AMOLED_BLACK
+                                    onUpdateThemePrefs(theme, useAmoled, highQualityDecoding)
                                 }
+                                .testTag("theme_item_${theme.name.lowercase()}")
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 modifier = Modifier.padding(12.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    // Wallpaper & Palette Swatch
                                     Box(
+                                        contentAlignment = Alignment.Center,
                                         modifier = Modifier
-                                            .size(18.dp)
-                                            .clip(CircleShape)
-                                            .background(theme.primary)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .clip(CircleShape)
-                                            .background(theme.secondary)
-                                    )
+                                            .size(38.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(theme.wallpaperTop, theme.primary, theme.secondary)
+                                                )
+                                            )
+                                            .border(1.dp, theme.secondary.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .clip(CircleShape)
+                                                .background(theme.tertiary)
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text(theme.label, style = MaterialTheme.typography.titleSmall, color = TextPrimary)
+                                    Column {
+                                        Text(
+                                            text = theme.label,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = TextPrimary
+                                        )
+                                        Text(
+                                            text = "${theme.subtitle} • ${theme.playerStyleBadge}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextSecondary
+                                        )
+                                    }
                                 }
-                                if (selected) {
-                                    Text("ACTIVE", style = MaterialTheme.typography.labelSmall, color = theme.secondary)
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { previewedTheme = theme },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(30.dp)
+                                    ) {
+                                        Text("Preview", style = MaterialTheme.typography.labelSmall, color = theme.secondary)
+                                    }
+                                    Button(
+                                        onClick = {
+                                            previewedTheme = theme
+                                            val useAmoled = theme == AccentTheme.AMOLED_BLACK
+                                            onUpdateThemePrefs(theme, useAmoled, highQualityDecoding)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isApplied) StudioEmerald else theme.primary
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(30.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isApplied) "Active" else "Apply",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isApplied) DeepObsidian else Color.White
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -500,7 +676,7 @@ fun SettingsScreen(
                 }
 
                 ToggleSettingRow(
-                    title = "Pure AMOLED Deep Obsidian Black (#07060C)",
+                    title = "Pure AMOLED Deep Obsidian Black (#000000)",
                     subtitle = "Maximum contrast for dark rooms and night listening",
                     checked = pureAmoledBlack,
                     onCheckedChange = { amoled ->

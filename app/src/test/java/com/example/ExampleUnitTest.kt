@@ -2,14 +2,21 @@ package com.example
 
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
+import com.example.audio.AmbientSoundEngine
 import com.example.audio.AudioEngine
 import com.example.audio.LofiDspAudioProcessor
+import com.example.audio.MusicConverterEngine
 import com.example.audio.MusicMoodAnalyzer
+import com.example.model.AmbientLayerType
+import com.example.model.BuiltInConverterPresets
 import com.example.model.BuiltInLofiPresets
+import com.example.model.ConverterCategory
 import com.example.model.DetectedMusicMood
 import com.example.model.EqualizerState
+import com.example.model.LiveSoundMode
 import com.example.model.LofiDspParameters
 import com.example.model.TrackItem
+import com.example.ui.theme.AccentTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -71,7 +78,27 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun verifyAllProfessionalPresetsAndSmartMoodMappingsExist() {
+    fun verifyTwelvePremiumThemesAndAllPresetsExist() {
+        assertEquals("Expected 12 primary studio themes", 12, AccentTheme.PRIMARY_TWELVE.size)
+        val themeLabels = AccentTheme.PRIMARY_TWELVE.map { it.label }
+        val expectedThemes = listOf(
+            "Anime Lo-Fi Night",
+            "Midnight Purple",
+            "Cyberpunk Neon",
+            "AMOLED Black",
+            "Ocean Blue",
+            "Sakura Pink",
+            "Sunset Orange",
+            "Galaxy Dreams",
+            "Rainy Window",
+            "Retro Synthwave",
+            "Forest Calm",
+            "Minimal Premium"
+        )
+        for (expected in expectedThemes) {
+            assertTrue("Expected theme '$expected' to exist", expected in themeLabels)
+        }
+
         val presetIds = BuiltInLofiPresets.ALL.map { it.id }
         val requiredPresets = listOf(
             "original",
@@ -94,6 +121,168 @@ class ExampleUnitTest {
                 "Expected mood ${mood.displayName} primary preset '${mood.primaryPresetId}' to exist",
                 mood.primaryPresetId in presetIds
             )
+        }
+    }
+
+    @Test
+    fun verifyAllTenLiveSoundModesAndBinauralHrtfAnd8DRotation() {
+        assertEquals(10, LiveSoundMode.entries.size)
+
+        val processor = LofiDspAudioProcessor()
+        processor.configure(AudioProcessor.AudioFormat(44100, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        processor.updateEqualizerState(
+            EqualizerState(isEnabled = false, volumeNormalization = false, smoothTransitions = false, fadeInOutMs = 0)
+        )
+
+        val frames = 2048
+        fun makeStereoTestBuffer(): ByteBuffer {
+            val buf = ByteBuffer.allocateDirect(frames * 4).order(ByteOrder.LITTLE_ENDIAN)
+            for (i in 0 until frames) {
+                val t = i.toDouble() / 44100.0
+                val leftSig = 0.45 * sin(2.0 * PI * 180.0 * t) + 0.35 * sin(2.0 * PI * 2200.0 * t)
+                val rightSig = 0.45 * sin(2.0 * PI * 180.0 * t) + 0.25 * sin(2.0 * PI * 3400.0 * t)
+                buf.putShort((leftSig * 26000.0).toInt().toShort())
+                buf.putShort((rightSig * 26000.0).toInt().toShort())
+            }
+            buf.flip()
+            return buf
+        }
+
+        // Test all 10 LiveSoundModes for non-clipping valid output
+        for (mode in LiveSoundMode.entries) {
+            processor.flush()
+            processor.updateDspParameters(
+                LofiDspParameters(
+                    isLiveLofiEnabled = mode == LiveSoundMode.LIVE_LOFI,
+                    soundMode = mode,
+                    masterIntensity = 0.78f,
+                    spatialIntensity = 0.85f,
+                    eightDRotationSpeedHz = 0.25f,
+                    spatialDistance = 0.45f,
+                    spatialAzimuthDeg = 45f,
+                    spatialAutoOrbit = false
+                )
+            )
+            processor.queueInput(makeStereoTestBuffer())
+            val out = processor.output.order(ByteOrder.LITTLE_ENDIAN)
+            assertEquals("Expected $frames stereo frames for mode $mode", frames * 4, out.remaining())
+            var maxAbsSample = 0
+            while (out.hasRemaining()) {
+                val s = abs(out.short.toInt())
+                if (s > maxAbsSample) maxAbsSample = s
+            }
+            assertTrue("Expected non-silent output for mode $mode", maxAbsSample > 1000)
+            assertTrue("Expected zero hard digital clipping for mode $mode, got $maxAbsSample", maxAbsSample < 32767)
+        }
+
+        // Verify Binaural HRTF 3D Spatial Audio creates genuine interaural level/time difference for +60 deg azimuth
+        processor.flush()
+        processor.updateDspParameters(
+            LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.THREE_D_SPATIAL,
+                masterIntensity = 1.0f,
+                spatialIntensity = 1.0f,
+                spatialAzimuthDeg = 60f,
+                spatialAutoOrbit = false,
+                spatialDistance = 0.25f
+            )
+        )
+        fun makeMono1500HzBuffer(): ByteBuffer {
+            val monoIn = ByteBuffer.allocateDirect(frames * 4).order(ByteOrder.LITTLE_ENDIAN)
+            for (i in 0 until frames) {
+                val t = i.toDouble() / 44100.0
+                val s = (sin(2.0 * PI * 1500.0 * t) * 20000.0).toInt().toShort()
+                monoIn.putShort(s)
+                monoIn.putShort(s)
+            }
+            monoIn.flip()
+            return monoIn
+        }
+        // Warm up 25ms crossfade ramp so steady-state HRTF is measured
+        processor.queueInput(makeMono1500HzBuffer())
+        processor.output
+        processor.queueInput(makeMono1500HzBuffer())
+        val hrtfOut = processor.output.order(ByteOrder.LITTLE_ENDIAN)
+        var energyL = 0.0
+        var energyR = 0.0
+        for (i in 0 until frames) {
+            val l = hrtfOut.short.toDouble()
+            val r = hrtfOut.short.toDouble()
+            energyL += l * l
+            energyR += r * r
+        }
+        assertTrue(
+            "Binaural HRTF at +60 deg right azimuth must produce higher ipsilateral Right ear energy ($energyR) than shadowed Left ear ($energyL)",
+            energyR > energyL * 1.15
+        )
+    }
+
+    @Test
+    fun verifyMusicConverterEngineAndAll22ConversionPresets() {
+        assertTrue("Expected at least 22 converter presets", BuiltInConverterPresets.ALL.size >= 22)
+        for (cat in ConverterCategory.entries) {
+            assertTrue(
+                "Expected category ${cat.displayName} to have presets",
+                BuiltInConverterPresets.byCategory(cat).isNotEmpty()
+            )
+        }
+
+        val sampleRate = 44100
+        val frames = 1024
+        val rawPcm = ByteArray(frames * 4)
+        val bb = ByteBuffer.wrap(rawPcm).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until frames) {
+            val t = i.toDouble() / sampleRate
+            val s = (sin(2.0 * PI * 220.0 * t) * 18000.0).toInt().toShort()
+            bb.putShort(s)
+            bb.putShort(s)
+        }
+
+        val slowedPreset = BuiltInConverterPresets.ALL.first { it.id == "conv_slowed_reverb" }
+        val slowedOut = MusicConverterEngine.processPcmBufferWithPreset(
+            inputPcm16Stereo = rawPcm,
+            sampleRateHz = sampleRate,
+            preset = slowedPreset,
+            intensity = 0.85f
+        )
+        // Slowed + Reverb has playbackSpeed = 0.84f -> output buffer has more frames than input
+        assertTrue(
+            "Slowed + Reverb output (${slowedOut.size} bytes) should be longer than input (${rawPcm.size} bytes)",
+            slowedOut.size > rawPcm.size
+        )
+
+        val nightcorePreset = BuiltInConverterPresets.ALL.first { it.id == "conv_nightcore" }
+        val nightcoreOut = MusicConverterEngine.processPcmBufferWithPreset(
+            inputPcm16Stereo = rawPcm,
+            sampleRateHz = sampleRate,
+            preset = nightcorePreset,
+            intensity = 0.85f
+        )
+        // Nightcore has playbackSpeed = 1.22f -> output buffer is shorter/faster than input
+        assertTrue(
+            "Nightcore output (${nightcoreOut.size} bytes) should be shorter than input (${rawPcm.size} bytes)",
+            nightcoreOut.size < rawPcm.size
+        )
+    }
+
+    @Test
+    fun verifyAmbientSoundEngineSynthesizesAllSixLayersWithoutClipping() {
+        val engine = AmbientSoundEngine()
+        for (layer in AmbientLayerType.entries) {
+            val volumes = AmbientLayerType.entries.associateWith { if (it == layer) 0.9f else 0f }
+            val chunk = engine.synthesizeStereoChunk(volumes = volumes, frames = 2048, sampleRate = 44100)
+            assertEquals(4096, chunk.size)
+            var nonZero = 0
+            var maxAbs = 0
+            for (s in chunk) {
+                val a = abs(s.toInt())
+                if (a > 0) nonZero++
+                if (a > maxAbs) maxAbs = a
+            }
+            assertTrue("Expected ambient layer ${layer.displayName} to synthesize non-zero audio", nonZero > 50)
+            assertTrue("Expected ambient layer ${layer.displayName} not to clip ($maxAbs)", maxAbs < 32767)
         }
     }
 

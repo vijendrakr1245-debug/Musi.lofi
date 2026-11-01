@@ -224,6 +224,9 @@ interface LofiDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveCustomLofiPreset(preset: CustomLofiPresetEntity)
 
+    @Query("UPDATE custom_lofi_presets SET name = :newName, subtitle = :newSubtitle WHERE id = :presetId")
+    suspend fun renameCustomLofiPreset(presetId: String, newName: String, newSubtitle: String)
+
     @Query("DELETE FROM custom_lofi_presets WHERE id = :presetId")
     suspend fun deleteCustomLofiPreset(presetId: String)
 

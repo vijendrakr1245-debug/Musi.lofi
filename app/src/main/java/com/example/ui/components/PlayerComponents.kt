@@ -91,8 +91,10 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.model.LiveSoundMode
 import com.example.model.LofiDspParameters
 import com.example.model.TrackItem
+import com.example.model.VisualizerMode
 import com.example.model.VisualizerSnapshot
 import com.example.ui.theme.AnalogAmber
 import com.example.ui.theme.DeepObsidian
@@ -108,6 +110,9 @@ import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.VinylRose
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 fun formatDurationMillis(ms: Long): String {
     val totalSec = (ms / 1000L).coerceAtLeast(0L)
@@ -126,7 +131,8 @@ fun RealTimeAudioVisualizer(
     isPlaying: Boolean,
     isLofiMode: Boolean,
     modifier: Modifier = Modifier,
-    showWaveformOverlay: Boolean = true
+    showWaveformOverlay: Boolean = true,
+    visualizerMode: VisualizerMode = VisualizerMode.SPECTRUM_BARS
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val secondaryColor = MaterialTheme.colorScheme.secondary
@@ -149,66 +155,159 @@ fun RealTimeAudioVisualizer(
         val w = size.width
         val h = size.height
         val bars = snapshot.spectrum.size.coerceAtLeast(1)
-        val gap = 4.dp.toPx()
-        val barWidth = ((w - gap * (bars - 1)) / bars).coerceAtLeast(2f)
 
-        // Draw subtle studio grid lines
-        for (row in 1..3) {
-            val y = h * (row / 4f)
-            drawLine(
-                color = SubtleBorder.copy(alpha = 0.4f),
-                start = Offset(0f, y),
-                end = Offset(w, y),
-                strokeWidth = 1f
-            )
-        }
+        when (visualizerMode) {
+            VisualizerMode.SPECTRUM_BARS -> {
+                val gap = 4.dp.toPx()
+                val barWidth = ((w - gap * (bars - 1)) / bars).coerceAtLeast(2f)
 
-        // Draw 32 real-time frequency spectrum bars from actual PCM DFT
-        for (i in 0 until bars) {
-            val rawMag = if (isPlaying) snapshot.spectrum[i] else 0.04f
-            val normalizedHeight = (rawMag.coerceIn(0.04f, 1.0f)) * (h * 0.86f)
-            val x = i * (barWidth + gap)
-            val topY = h - normalizedHeight
+                for (row in 1..3) {
+                    val y = h * (row / 4f)
+                    drawLine(
+                        color = SubtleBorder.copy(alpha = 0.4f),
+                        start = Offset(0f, y),
+                        end = Offset(w, y),
+                        strokeWidth = 1f
+                    )
+                }
 
-            val barBrush = if (isLofiMode) {
-                Brush.verticalGradient(
-                    colors = listOf(NeonCyan, primaryColor, primaryColor.copy(alpha = 0.4f)),
-                    startY = topY,
-                    endY = h
-                )
-            } else {
-                Brush.verticalGradient(
-                    colors = listOf(StudioEmerald, secondaryColor, secondaryColor.copy(alpha = 0.4f)),
-                    startY = topY,
-                    endY = h
-                )
+                for (i in 0 until bars) {
+                    val rawMag = if (isPlaying) snapshot.spectrum[i] else 0.04f
+                    val normalizedHeight = (rawMag.coerceIn(0.04f, 1.0f)) * (h * 0.86f)
+                    val x = i * (barWidth + gap)
+                    val topY = h - normalizedHeight
+
+                    val barBrush = if (isLofiMode) {
+                        Brush.verticalGradient(
+                            colors = listOf(NeonCyan, primaryColor, primaryColor.copy(alpha = 0.4f)),
+                            startY = topY,
+                            endY = h
+                        )
+                    } else {
+                        Brush.verticalGradient(
+                            colors = listOf(StudioEmerald, secondaryColor, secondaryColor.copy(alpha = 0.4f)),
+                            startY = topY,
+                            endY = h
+                        )
+                    }
+
+                    drawRoundRect(
+                        brush = barBrush,
+                        topLeft = Offset(x, topY),
+                        size = Size(barWidth, normalizedHeight),
+                        cornerRadius = CornerRadius(4f, 4f)
+                    )
+                }
+
+                if (showWaveformOverlay && snapshot.waveform.isNotEmpty()) {
+                    val path = Path()
+                    val pts = snapshot.waveform.size
+                    val midY = h * 0.36f
+                    val ampScale = h * 0.28f
+                    for (i in 0 until pts) {
+                        val px = (i.toFloat() / (pts - 1).coerceAtLeast(1)) * w
+                        val sample = if (isPlaying) snapshot.waveform[i] else 0f
+                        val py = (midY - sample * ampScale).coerceIn(2f, h - 2f)
+                        if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                    }
+                    drawPath(
+                        path = path,
+                        color = if (isLofiMode) AnalogAmber.copy(alpha = 0.9f) else NeonCyan.copy(alpha = 0.9f),
+                        style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                }
             }
 
-            drawRoundRect(
-                brush = barBrush,
-                topLeft = Offset(x, topY),
-                size = Size(barWidth, normalizedHeight),
-                cornerRadius = CornerRadius(4f, 4f)
-            )
-        }
-
-        // Draw live PCM Oscilloscope Waveform overlay
-        if (showWaveformOverlay && snapshot.waveform.isNotEmpty()) {
-            val path = Path()
-            val pts = snapshot.waveform.size
-            val midY = h * 0.36f
-            val ampScale = h * 0.28f
-            for (i in 0 until pts) {
-                val px = (i.toFloat() / (pts - 1).coerceAtLeast(1)) * w
-                val sample = if (isPlaying) snapshot.waveform[i] else 0f
-                val py = (midY - sample * ampScale).coerceIn(2f, h - 2f)
-                if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+            VisualizerMode.WAVEFORM -> {
+                val midY = h * 0.5f
+                drawLine(
+                    color = SubtleBorder.copy(alpha = 0.5f),
+                    start = Offset(0f, midY),
+                    end = Offset(w, midY),
+                    strokeWidth = 1f
+                )
+                if (snapshot.waveform.isNotEmpty()) {
+                    val path = Path()
+                    val pts = snapshot.waveform.size
+                    val ampScale = h * 0.44f
+                    for (i in 0 until pts) {
+                        val px = (i.toFloat() / (pts - 1).coerceAtLeast(1)) * w
+                        val sample = if (isPlaying) snapshot.waveform[i] else 0f
+                        val py = (midY - sample * ampScale).coerceIn(2f, h - 2f)
+                        if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                    }
+                    drawPath(
+                        path = path,
+                        brush = Brush.horizontalGradient(listOf(NeonCyan, primaryColor, AnalogAmber)),
+                        style = Stroke(width = 2.8.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                }
             }
-            drawPath(
-                path = path,
-                color = if (isLofiMode) AnalogAmber.copy(alpha = 0.9f) else NeonCyan.copy(alpha = 0.9f),
-                style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
-            )
+
+            VisualizerMode.CIRCULAR -> {
+                val cx = w * 0.5f
+                val cy = h * 0.5f
+                val baseRadius = (minOf(w, h) * 0.24f).coerceAtLeast(10f)
+                val maxSpike = (minOf(w, h) * 0.22f).coerceAtLeast(8f)
+                val rmsPulse = if (isPlaying) ((snapshot.rmsLeft + snapshot.rmsRight) * 0.5f).coerceIn(0f, 1f) else 0.05f
+
+                drawCircle(
+                    color = primaryColor.copy(alpha = 0.22f + 0.35f * rmsPulse),
+                    radius = baseRadius * (0.95f + 0.2f * rmsPulse),
+                    center = Offset(cx, cy)
+                )
+
+                for (i in 0 until bars) {
+                    val angle = (i.toFloat() / bars) * (2.0 * PI)
+                    val mag = if (isPlaying) snapshot.spectrum[i].coerceIn(0.05f, 1.0f) else 0.06f
+                    val r0 = baseRadius
+                    val r1 = baseRadius + mag * maxSpike
+                    val x0 = cx + cos(angle).toFloat() * r0
+                    val y0 = cy + sin(angle).toFloat() * r0
+                    val x1 = cx + cos(angle).toFloat() * r1
+                    val y1 = cy + sin(angle).toFloat() * r1
+                    drawLine(
+                        color = if (i % 2 == 0) NeonCyan else primaryColor,
+                        start = Offset(x0, y0),
+                        end = Offset(x1, y1),
+                        strokeWidth = 2.5.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+
+            VisualizerMode.THREE_D_STAGE -> {
+                val cx = w * 0.5f
+                val cy = h * 0.5f
+                val maxR = minOf(w, h) * 0.44f
+                for (ring in 1..3) {
+                    drawCircle(
+                        color = SubtleBorder.copy(alpha = 0.45f),
+                        radius = maxR * (ring / 3f),
+                        center = Offset(cx, cy),
+                        style = Stroke(width = 1.dp.toPx())
+                    )
+                }
+                val lEnergy = if (isPlaying) snapshot.rmsLeft.coerceIn(0.05f, 1f) else 0.08f
+                val rEnergy = if (isPlaying) snapshot.rmsRight.coerceIn(0.05f, 1f) else 0.08f
+                val panX = ((rEnergy - lEnergy) * w * 0.28f).coerceIn(-w * 0.35f, w * 0.35f)
+                val sourceCenter = Offset(cx + panX, cy)
+
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(NeonCyan.copy(alpha = 0.55f), Color.Transparent),
+                        center = sourceCenter,
+                        radius = maxR * 0.7f
+                    ),
+                    radius = maxR * 0.7f,
+                    center = sourceCenter
+                )
+                drawCircle(
+                    color = NeonCyan,
+                    radius = 6.dp.toPx(),
+                    center = sourceCenter
+                )
+            }
         }
     }
 }
@@ -743,7 +842,9 @@ fun FullScreenNowPlayingOverlay(
     onSelectQueueTrack: (TrackItem) -> Unit,
     onSetSleepTimerMinutes: (Int) -> Unit,
     onOpenLofiStudio: () -> Unit,
-    onOpenMoodScreen: () -> Unit = {}
+    onOpenMoodScreen: () -> Unit = {},
+    onSelectSoundMode: (LiveSoundMode) -> Unit = {},
+    onOpenMusicConverter: () -> Unit = {}
 ) {
     BackHandler(onBack = onClose)
 
@@ -1187,7 +1288,7 @@ fun FullScreenNowPlayingOverlay(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Two-State ORIGINAL / LO-FI Toggle
+            // Two-State ORIGINAL / LO-FI Toggle + 10 Live Sound Mode Quick Selector
             OriginalLofiSegmentedControl(
                 isLofiEnabled = dspParams.isLiveLofiEnabled,
                 activePresetName = dspParams.presetName,
@@ -1195,7 +1296,34 @@ fun FullScreenNowPlayingOverlay(
                 testTagPrefix = "full_player_mode"
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("full_player_sound_modes_row")
+            ) {
+                items(LiveSoundMode.entries, key = { it.name }) { mode ->
+                    val selected = dspParams.soundMode == mode
+                    FilterChip(
+                        selected = selected,
+                        onClick = { onSelectSoundMode(mode) },
+                        label = {
+                            Text(
+                                text = mode.displayName,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = ElectricPurple.copy(alpha = 0.30f),
+                            selectedLabelColor = NeonCyan
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Seek Progress Bar with Timestamps
             val safeDuration = durationMs.coerceAtLeast(1L)
@@ -1364,7 +1492,7 @@ fun FullScreenNowPlayingOverlay(
                             onClose()
                             onOpenMoodScreen()
                         }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
                         .testTag("now_playing_open_mood_button")
                 ) {
                     Icon(
@@ -1378,6 +1506,33 @@ fun FullScreenNowPlayingOverlay(
                         text = "Mood",
                         style = MaterialTheme.typography.labelSmall,
                         color = NeonCyan
+                    )
+                }
+
+                // Music Converter Studio quick entry
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(StudioEmerald.copy(alpha = 0.20f))
+                        .clickable {
+                            onClose()
+                            onOpenMusicConverter()
+                        }
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .testTag("now_playing_open_converter_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = "Music Converter",
+                        tint = StudioEmerald,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Convert",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = StudioEmerald
                     )
                 }
             }
