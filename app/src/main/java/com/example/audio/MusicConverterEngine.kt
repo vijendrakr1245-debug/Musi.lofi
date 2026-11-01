@@ -54,15 +54,15 @@ object MusicConverterEngine {
     ): ByteArray {
         val processor = LofiDspAudioProcessor()
         val effectiveParams = preset.dspParameters.copy(
-            isLiveLofiEnabled = true,
+            isLiveLofiEnabled = preset.dspParameters.isLiveLofiEnabled,
             masterIntensity = (preset.dspParameters.masterIntensity * (0.4f + 0.6f * intensity)).coerceIn(0.1f, 1.0f)
         )
         processor.updateDspParameters(effectiveParams)
         processor.updateEqualizerState(
             if (preset.eqBandGainsDb.any { it != 0f }) {
-                eqState.copy(isEnabled = true, bandGainsDb = preset.eqBandGainsDb)
+                eqState.copy(isEnabled = true, bandGainsDb = preset.eqBandGainsDb, smoothTransitions = false)
             } else {
-                eqState
+                eqState.copy(smoothTransitions = false)
             }
         )
         processor.configure(AudioProcessor.AudioFormat(sampleRateHz, 2, androidx.media3.common.C.ENCODING_PCM_16BIT))
@@ -120,7 +120,7 @@ object MusicConverterEngine {
         val processor = LofiDspAudioProcessor()
         val baseParams = customDspOverride ?: preset.dspParameters
         val scaledParams = baseParams.copy(
-            isLiveLofiEnabled = true,
+            isLiveLofiEnabled = baseParams.isLiveLofiEnabled,
             masterIntensity = (baseParams.masterIntensity * (0.35f + 0.65f * intensity.coerceIn(0f, 1f))).coerceIn(0.1f, 1.0f)
         )
         processor.updateDspParameters(scaledParams)
@@ -139,8 +139,11 @@ object MusicConverterEngine {
         )
         processor.flush()
 
-        val speedFactor = scaledParams.playbackSpeed.coerceIn(0.65f, 1.35f) *
-            Math.pow(2.0, (scaledParams.pitchSemitones / 12.0)).toFloat().coerceIn(0.75f, 1.35f)
+        val speedFactor = if (kotlin.math.abs(scaledParams.playbackSpeed - 1.0f) > 0.01f) {
+            scaledParams.playbackSpeed.coerceIn(0.65f, 1.35f)
+        } else {
+            Math.pow(2.0, (scaledParams.pitchSemitones / 12.0)).toFloat().coerceIn(0.65f, 1.35f)
+        }
         val effectiveRateRatio = speedFactor.coerceIn(0.65f, 1.45f)
 
         var totalPcmBytesWritten = 0L

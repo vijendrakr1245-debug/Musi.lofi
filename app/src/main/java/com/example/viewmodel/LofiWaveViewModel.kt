@@ -691,20 +691,66 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     // REAL-TIME LO-FI DSP & HI-FI SWITCHING (NO TRACK RESTART)
     // =========================================================================
 
+    private var saveDspJob: Job? = null
+    private var saveEqJob: Job? = null
+    private var lastLofiPresetParams: LofiDspParameters =
+        BuiltInLofiPresets.ALL.first { it.id == "soft_lofi" }.parameters
+    private var userSavedEqState: EqualizerState? = null
+    private var isConverterEqOverrideActive: Boolean = false
+
+    private fun scheduleSaveDspParameters(params: LofiDspParameters) {
+        saveDspJob?.cancel()
+        saveDspJob = viewModelScope.launch {
+            delay(180L)
+            prefsRepo.saveDspParameters(params)
+        }
+    }
+
+    private fun scheduleSaveEqualizerState(eq: EqualizerState) {
+        saveEqJob?.cancel()
+        saveEqJob = viewModelScope.launch {
+            delay(180L)
+            prefsRepo.saveEqualizerState(eq)
+        }
+    }
+
+    private fun clearConverterEqOverrideIfNeeded() {
+        if (isConverterEqOverrideActive) {
+            isConverterEqOverrideActive = false
+            val restored = userSavedEqState ?: EqualizerState()
+            userSavedEqState = null
+            _eqState.value = restored
+            AudioEngineBridge.applyEqualizerState(restored)
+        }
+    }
+
     fun setLiveLofiMode(enabled: Boolean) {
+        clearConverterEqOverrideIfNeeded()
         val current = _dspParams.value
-        val updated = if (enabled && (current.presetId == "original" || current.masterIntensity <= 0.01f)) {
-            val softDefault = BuiltInLofiPresets.ALL.firstOrNull { it.id == "soft_lofi" }?.parameters
-                ?: LofiDspParameters()
-            softDefault.copy(isLiveLofiEnabled = true, masterGainDb = current.masterGainDb)
+        val updated = if (enabled) {
+            val base = if (current.presetId == "original" || current.masterIntensity <= 0.01f || current.soundMode != LiveSoundMode.LIVE_LOFI) {
+                lastLofiPresetParams
+            } else {
+                current
+            }
+            base.copy(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                playbackSpeed = 1.0f,
+                pitchSemitones = 0f,
+                masterGainDb = current.masterGainDb
+            )
         } else {
-            current.copy(isLiveLofiEnabled = enabled)
+            current.copy(
+                isLiveLofiEnabled = false,
+                soundMode = LiveSoundMode.ORIGINAL_STEREO,
+                playbackSpeed = 1.0f,
+                pitchSemitones = 0f
+            )
         }
         _dspParams.value = updated
         AudioEngineBridge.applyLofiParameters(updated)
-        viewModelScope.launch {
-            prefsRepo.saveDspParameters(updated)
-        }
+        scheduleSaveDspParameters(updated)
         postBannerMessage(
             if (enabled) "Real-Time Live Lo-Fi Mode Active (${updated.presetName})"
             else "Original Hi-Fi Mode Active (All DSP Bypassed)"
@@ -712,16 +758,21 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun selectLofiPreset(preset: LofiPreset) {
+        clearConverterEqOverrideIfNeeded()
         val isOriginalBypass = preset.id == "original"
+        if (!isOriginalBypass) {
+            lastLofiPresetParams = preset.parameters
+        }
         val updated = preset.parameters.copy(
             isLiveLofiEnabled = !isOriginalBypass && preset.parameters.isLiveLofiEnabled,
+            soundMode = if (isOriginalBypass) LiveSoundMode.ORIGINAL_STEREO else LiveSoundMode.LIVE_LOFI,
+            playbackSpeed = 1.0f,
+            pitchSemitones = 0f,
             masterGainDb = _dspParams.value.masterGainDb
         )
         _dspParams.value = updated
         AudioEngineBridge.applyLofiParameters(updated)
-        viewModelScope.launch {
-            prefsRepo.saveDspParameters(updated)
-        }
+        scheduleSaveDspParameters(updated)
         postBannerMessage(
             if (isOriginalBypass) "Original Mode Active (All DSP Effects Bypassed)"
             else "Applied '${preset.name}' Real-Time DSP Preset"
@@ -731,11 +782,12 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     fun updateDspParameter(transform: (LofiDspParameters) -> LofiDspParameters) {
         val current = _dspParams.value
         val updated = transform(current)
+        if (updated.soundMode == LiveSoundMode.LIVE_LOFI && updated.isLiveLofiEnabled) {
+            lastLofiPresetParams = updated
+        }
         _dspParams.value = updated
         AudioEngineBridge.applyLofiParameters(updated)
-        viewModelScope.launch {
-            prefsRepo.saveDspParameters(updated)
-        }
+        scheduleSaveDspParameters(updated)
     }
 
     fun saveCurrentAsCustomPreset(name: String, subtitle: String, moodCategory: String) {
@@ -801,25 +853,16 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun resetAudioEditorToDefault() {
-        val defaultDsp = LofiDspParameters(
-            isLiveLofiEnabled = false,
-            soundMode = LiveSoundMode.ORIGINAL_STEREO,
-            presetId = "original",
-            presetName = "Original Stereo",
-            masterIntensity = 0f,
-            playbackSpeed = 1.0f,
-            pitchSemitones = 0f,
-            masterGainDb = 0f
-        )
+        isConverterEqOverrideActive = false
+        userSavedEqState = null
+        val defaultDsp = LofiDspParameters.forLiveSoundMode(LiveSoundMode.ORIGINAL_STEREO)
         val defaultEq = EqualizerState()
         _dspParams.value = defaultDsp
         _eqState.value = defaultEq
         AudioEngineBridge.applyLofiParameters(defaultDsp)
         AudioEngineBridge.applyEqualizerState(defaultEq)
-        viewModelScope.launch {
-            prefsRepo.saveDspParameters(defaultDsp)
-            prefsRepo.saveEqualizerState(defaultEq)
-        }
+        scheduleSaveDspParameters(defaultDsp)
+        scheduleSaveEqualizerState(defaultEq)
         postBannerMessage("Reset all DSP, Spatial, and EQ parameters to flat Original Stereo")
     }
 
@@ -828,34 +871,16 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     // =========================================================================
 
     fun setSoundMode(mode: LiveSoundMode) {
+        clearConverterEqOverrideIfNeeded()
         val current = _dspParams.value
-        val updated = when (mode) {
-            LiveSoundMode.ORIGINAL_STEREO -> current.copy(
-                soundMode = LiveSoundMode.ORIGINAL_STEREO,
-                isLiveLofiEnabled = false
-            )
-            LiveSoundMode.LIVE_LOFI -> {
-                val base = if (current.presetId == "original" || current.masterIntensity <= 0.01f) {
-                    BuiltInLofiPresets.ALL.firstOrNull { it.id == "soft_lofi" }?.parameters ?: LofiDspParameters()
-                } else {
-                    current
-                }
-                base.copy(
-                    soundMode = LiveSoundMode.LIVE_LOFI,
-                    isLiveLofiEnabled = true,
-                    masterGainDb = current.masterGainDb
-                )
-            }
-            else -> current.copy(
-                soundMode = mode,
-                spatialIntensity = current.spatialIntensity.coerceAtLeast(0.75f)
-            )
-        }
+        val updated = LofiDspParameters.forLiveSoundMode(
+            mode = mode,
+            masterGainDb = current.masterGainDb,
+            baseLofiPreset = lastLofiPresetParams
+        )
         _dspParams.value = updated
         AudioEngineBridge.applyLofiParameters(updated)
-        viewModelScope.launch {
-            prefsRepo.saveDspParameters(updated)
-        }
+        scheduleSaveDspParameters(updated)
         postBannerMessage("Sound Mode: ${mode.displayName} — ${mode.subtitle}")
     }
 
@@ -895,11 +920,14 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     fun toggleConverterBeforeAfterPreview(showOriginalBefore: Boolean) {
         _isConverterBeforeOriginalPreview.value = showOriginalBefore
         if (showOriginalBefore) {
-            val bypass = _dspParams.value.copy(
-                isLiveLofiEnabled = false,
-                soundMode = LiveSoundMode.ORIGINAL_STEREO
+            val bypass = LofiDspParameters.forLiveSoundMode(
+                mode = LiveSoundMode.ORIGINAL_STEREO,
+                masterGainDb = _dspParams.value.masterGainDb
             )
             AudioEngineBridge.applyLofiParameters(bypass)
+            if (isConverterEqOverrideActive) {
+                AudioEngineBridge.applyEqualizerState(EqualizerState(isEnabled = false))
+            }
             postBannerMessage("Before (Original Unprocessed Song) Preview Active")
         } else {
             applyConverterPresetToLivePlayer(_selectedConverterPreset.value, _converterIntensity.value)
@@ -909,7 +937,7 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
 
     private fun applyConverterPresetToLivePlayer(preset: MusicConverterPreset, intensity: Float) {
         val scaledDsp = preset.dspParameters.copy(
-            isLiveLofiEnabled = true,
+            isLiveLofiEnabled = preset.dspParameters.isLiveLofiEnabled,
             masterIntensity = (preset.dspParameters.masterIntensity * (0.35f + 0.65f * intensity)).coerceIn(0.1f, 1.0f),
             masterGainDb = _dspParams.value.masterGainDb
         )
@@ -917,6 +945,10 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
         AudioEngineBridge.applyLofiParameters(scaledDsp)
 
         if (preset.eqBandGainsDb.any { it != 0f }) {
+            if (!isConverterEqOverrideActive) {
+                userSavedEqState = _eqState.value
+                isConverterEqOverrideActive = true
+            }
             val updatedEq = _eqState.value.copy(
                 isEnabled = true,
                 presetName = preset.name,
@@ -924,6 +956,8 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
             )
             _eqState.value = updatedEq
             AudioEngineBridge.applyEqualizerState(updatedEq)
+        } else {
+            clearConverterEqOverrideIfNeeded()
         }
     }
 
@@ -1013,12 +1047,12 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     // =========================================================================
 
     fun updateEqualizer(transform: (EqualizerState) -> EqualizerState) {
+        isConverterEqOverrideActive = false
+        userSavedEqState = null
         val updated = transform(_eqState.value)
         _eqState.value = updated
         AudioEngineBridge.applyEqualizerState(updated)
-        viewModelScope.launch {
-            prefsRepo.saveEqualizerState(updated)
-        }
+        scheduleSaveEqualizerState(updated)
     }
 
     fun updateEqBand(bandIndex: Int, gainDb: Float) {

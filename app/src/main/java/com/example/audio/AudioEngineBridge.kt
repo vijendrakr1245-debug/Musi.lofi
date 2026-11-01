@@ -76,8 +76,14 @@ object AudioEngineBridge {
         pcmAudioEngine.setMasterGainDb(params.masterGainDb)
         val player = exoPlayerInstance ?: return
 
-        val isDspOrModeActive = (params.isLiveLofiEnabled && params.presetId != "original") ||
-            params.soundMode != LiveSoundMode.ORIGINAL_STEREO
+        val isDspOrModeActive = when (params.soundMode) {
+            LiveSoundMode.ORIGINAL_STEREO -> false
+            LiveSoundMode.LIVE_LOFI -> params.isLiveLofiEnabled &&
+                params.presetId != "original" &&
+                params.masterIntensity > 0.01f
+            else -> params.masterIntensity > 0.01f
+        } || abs(params.playbackSpeed - 1.0f) > 0.01f || abs(params.pitchSemitones) > 0.05f
+
         val rawSpeed = if (isDspOrModeActive) {
             params.playbackSpeed.coerceIn(0.65f, 1.35f)
         } else {
@@ -88,7 +94,7 @@ object AudioEngineBridge {
         val pitchMultiplier = if (abs(pitchSemitones) < 0.05f) {
             effectiveSpeed // Analog tape-locked pitch when no explicit semitone shift is set
         } else {
-            (effectiveSpeed * 2.0.pow(pitchSemitones.toDouble() / 12.0).toFloat()).coerceIn(0.55f, 1.65f)
+            2.0.pow(pitchSemitones.toDouble() / 12.0).toFloat().coerceIn(0.55f, 1.65f)
         }
 
         val targetPlaybackParams = if (effectiveSpeed == 1.0f && abs(pitchMultiplier - 1.0f) < 0.005f) {

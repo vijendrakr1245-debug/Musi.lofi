@@ -361,4 +361,139 @@ class ExampleRobolectricTest {
         assertEquals(4.0f, restored.eqState.midrangeBoostDb, 0.01f)
         assertEquals(1.5f, restored.eqState.trebleBoostDb, 0.01f)
     }
+
+    @Test
+    fun `audit benchmark - all sound modes produce distinct output on same local wav file with low cpu and zero underruns`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val studioTracks = StudioWavGenerator.ensureStudioTracksGenerated(context)
+        val localWavFile = File(URI(studioTracks.first().uriString))
+        assertTrue("Local WAV test file must exist", localWavFile.exists())
+
+        val wavBytes = localWavFile.readBytes()
+        val sampleRate = 44100
+        val channels = 2
+        // Extract a 16384-frame (65536-byte, ~371.5 ms) stereo slice from the same local audio file
+        val sliceBytes = 65536
+        val sameLocalAudioSlice = wavBytes.copyOfRange(44 + sampleRate * 4, 44 + sampleRate * 4 + sliceBytes)
+
+        val processor = LofiDspAudioProcessor()
+        processor.configure(AudioProcessor.AudioFormat(sampleRate, channels, C.ENCODING_PCM_16BIT))
+        processor.updateEqualizerState(EqualizerState(isEnabled = false, smoothTransitions = false, fadeInOutMs = 0))
+
+        val renderedOutputs = linkedMapOf<String, ByteArray>()
+        println("=== COMPLETE AUDIO ENGINE BENCHMARK (SAME LOCAL WAV TRACK) ===")
+
+        for (mode in com.example.model.LiveSoundMode.entries) {
+            val params = com.example.model.LofiDspParameters.forLiveSoundMode(mode)
+            processor.updateDspParameters(params)
+            processor.flush()
+
+            // Warmup pass for steady-state filter/delay lines
+            processor.processAndMeasureBuffer(
+                ByteBuffer.wrap(sameLocalAudioSlice.copyOf()).order(ByteOrder.LITTLE_ENDIAN),
+                ByteBuffer.allocate(sliceBytes),
+                sampleRate,
+                channels
+            )
+
+            // Timed measurement pass on the exact same local audio slice
+            val outBuf = ByteBuffer.allocate(sliceBytes).order(ByteOrder.LITTLE_ENDIAN)
+            val report = processor.processAndMeasureBuffer(
+                ByteBuffer.wrap(sameLocalAudioSlice.copyOf()).order(ByteOrder.LITTLE_ENDIAN),
+                outBuf,
+                sampleRate,
+                channels
+            )
+            renderedOutputs[mode.displayName] = outBuf.array()
+
+            println(
+                String.format(
+                    "Mode %-18s | Latency: %5.2f ms / %6.1f ms (%4.2f%% CPU) | Peak: %6.2f dB | RMS: %6.2f dB | Clips: %d | Underruns: %d",
+                    mode.displayName,
+                    report.processingLatencyMs,
+                    report.bufferDurationMs,
+                    report.cpuUsagePercent,
+                    report.peakLevelDb,
+                    report.rmsCombinedDb,
+                    report.clippingCount,
+                    report.underrunCount
+                )
+            )
+
+            assertEquals("Mode ${mode.displayName} must have 0 clipped samples", 0, report.clippingCount)
+            assertEquals("Mode ${mode.displayName} must have 0 buffer underruns", 0, report.underrunCount)
+            assertTrue("Mode ${mode.displayName} peak must stay within ceiling", report.peakLevelLinear <= 0.966f)
+            assertTrue(
+                "Mode ${mode.displayName} latency (${report.processingLatencyMs}ms) must be well below buffer budget (${report.bufferDurationMs}ms)",
+                report.processingLatencyMs < report.bufferDurationMs * 0.35f
+            )
+        }
+
+        // Verify pairwise acoustic distinctness across all 10 LiveSoundModes on the same local audio file
+        val modeNames = renderedOutputs.keys.toList()
+        for (i in modeNames.indices) {
+            for (j in i + 1 until modeNames.size) {
+                val nameA = modeNames[i]
+                val nameB = modeNames[j]
+                val bytesA = renderedOutputs.getValue(nameA)
+                val bytesB = renderedOutputs.getValue(nameB)
+                val bufA = ByteBuffer.wrap(bytesA).order(ByteOrder.LITTLE_ENDIAN)
+                val bufB = ByteBuffer.wrap(bytesB).order(ByteOrder.LITTLE_ENDIAN)
+                var absDiffSum = 0L
+                val sampleCount = sliceBytes / 2
+                for (s in 0 until sampleCount) {
+                    absDiffSum += abs(bufA.short.toInt() - bufB.short.toInt())
+                }
+                val meanSampleDiff = absDiffSum.toDouble() / sampleCount.toDouble()
+                assertTrue(
+                    "Modes '$nameA' and '$nameB' must produce measurably distinct audio on the same song (mean diff=$meanSampleDiff LSB)",
+                    meanSampleDiff > 12.0
+                )
+            }
+        }
+
+        // Verify Slowed + Reverb and Nightcore converter modes on the same local audio slice
+        val slowedPreset = com.example.model.BuiltInConverterPresets.ALL.first { it.id == "conv_slowed_reverb" }
+        val nightcorePreset = com.example.model.BuiltInConverterPresets.ALL.first { it.id == "conv_nightcore" }
+        val slowedBytes = com.example.audio.MusicConverterEngine.processPcmBufferWithPreset(
+            inputPcm16Stereo = sameLocalAudioSlice,
+            sampleRateHz = sampleRate,
+            preset = slowedPreset,
+            intensity = 0.88f
+        )
+        val nightcoreBytes = com.example.audio.MusicConverterEngine.processPcmBufferWithPreset(
+            inputPcm16Stereo = sameLocalAudioSlice,
+            sampleRateHz = sampleRate,
+            preset = nightcorePreset,
+            intensity = 0.88f
+        )
+        assertTrue("Slowed + Reverb must lengthen audio frame count (0.85x speed)", slowedBytes.size > sameLocalAudioSlice.size)
+        assertTrue("Nightcore must shorten audio frame count (1.22x speed)", nightcoreBytes.size < sameLocalAudioSlice.size)
+
+        // Verify smooth live mode switching without calling flush() produces zero clicks/clipping
+        processor.updateEqualizerState(EqualizerState(isEnabled = false, smoothTransitions = true, fadeInOutMs = 250))
+        val switchSequence = listOf(
+            com.example.model.LiveSoundMode.ORIGINAL_STEREO,
+            com.example.model.LiveSoundMode.LIVE_LOFI,
+            com.example.model.LiveSoundMode.BASS_BOOST,
+            com.example.model.LiveSoundMode.EIGHT_D_ULTRA,
+            com.example.model.LiveSoundMode.THREE_D_SPATIAL,
+            com.example.model.LiveSoundMode.CLEAR_VOCAL,
+            com.example.model.LiveSoundMode.DREAMY_SOUND,
+            com.example.model.LiveSoundMode.ORIGINAL_STEREO
+        )
+        val chunkBytes = 8192
+        val chunkSlice = sameLocalAudioSlice.copyOf(chunkBytes)
+        for (mode in switchSequence) {
+            processor.updateDspParameters(com.example.model.LofiDspParameters.forLiveSoundMode(mode))
+            val switchReport = processor.processAndMeasureBuffer(
+                ByteBuffer.wrap(chunkSlice.copyOf()).order(ByteOrder.LITTLE_ENDIAN),
+                ByteBuffer.allocate(chunkBytes),
+                sampleRate,
+                channels
+            )
+            assertEquals("Live switch to $mode must produce 0 clipping", 0, switchReport.clippingCount)
+            assertTrue("Live switch to $mode must stay under ceiling", switchReport.peakLevelLinear <= 0.966f)
+        }
+    }
 }
