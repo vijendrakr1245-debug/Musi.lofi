@@ -312,4 +312,53 @@ class ExampleRobolectricTest {
         assertTrue(engine.processedFramesCount > 0L)
         engine.stopAndRelease()
     }
+
+    @Test
+    fun `verify MediaMetadataRetrieverUtil extracts real metadata and AudioPlaybackQuality persists`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val studioTracks = StudioWavGenerator.ensureStudioTracksGenerated(context)
+        assertTrue(studioTracks.isNotEmpty())
+
+        val firstTrack = studioTracks.first()
+        val extracted = com.example.data.MediaMetadataRetrieverUtil.extractMetadata(
+            context = context,
+            uri = android.net.Uri.parse(firstTrack.uriString),
+            fallbackFileName = "${firstTrack.title}.wav",
+            fallbackArtist = firstTrack.artist,
+            fallbackAlbum = firstTrack.album
+        )
+
+        assertEquals(firstTrack.title, extracted.title)
+        assertEquals(firstTrack.artist, extracted.artist)
+        assertEquals("WAV", extracted.audioFormat)
+        assertEquals(44100, extracted.sampleRateHz)
+        assertEquals(2, extracted.channelCount)
+        assertEquals(16, extracted.bitsPerSample)
+        assertEquals(1411, extracted.bitrateKbps)
+        assertTrue("Expected valid duration from local WAV file", extracted.durationMs >= 20_000L)
+        assertTrue(firstTrack.technicalMetadataSummary.contains("WAV"))
+        assertTrue(firstTrack.technicalMetadataSummary.contains("44.1 kHz"))
+
+        // Verify AudioPlaybackQuality, 5-band EQ mode, and Midrange EQ persistence
+        val prefs = UserPreferencesRepository(context)
+        prefs.saveAudioPlaybackQuality(com.example.model.AudioPlaybackQuality.MAXIMUM_AVAILABLE_QUALITY)
+        prefs.saveEqualizerState(
+            EqualizerState(
+                isEnabled = true,
+                isFiveBandMode = true,
+                presetName = "Vocal",
+                bandGainsDb = EqualizerState.BUILT_IN_EQ_PRESETS.getValue("Vocal"),
+                bassBoostDb = 3.0f,
+                midrangeBoostDb = 4.0f,
+                trebleBoostDb = 1.5f
+            )
+        )
+        val restored = prefs.preferencesFlow.first()
+        assertEquals(com.example.model.AudioPlaybackQuality.MAXIMUM_AVAILABLE_QUALITY, restored.audioPlaybackQuality)
+        assertTrue(restored.eqState.isFiveBandMode)
+        assertEquals("Vocal", restored.eqState.presetName)
+        assertEquals(3.0f, restored.eqState.bassBoostDb, 0.01f)
+        assertEquals(4.0f, restored.eqState.midrangeBoostDb, 0.01f)
+        assertEquals(1.5f, restored.eqState.trebleBoostDb, 0.01f)
+    }
 }

@@ -136,20 +136,35 @@ object StudioWavGenerator {
             if (!file.exists() || file.length() < 44100L) {
                 writeStereoWavFile(file, spec)
             }
+            val fileUri = Uri.fromFile(file)
+            val extracted = com.example.data.MediaMetadataRetrieverUtil.extractMetadata(
+                context = context,
+                uri = fileUri,
+                fallbackFileName = spec.fileName,
+                fallbackArtist = spec.artist,
+                fallbackAlbum = spec.album,
+                fallbackGenre = "Lo-Fi Chillhop"
+            )
             items.add(
                 TrackItem(
                     id = spec.id,
-                    uriString = Uri.fromFile(file).toString(),
+                    uriString = fileUri.toString(),
                     title = spec.title,
                     artist = spec.artist,
                     album = spec.album,
-                    durationMs = spec.durationSeconds * 1000L,
+                    durationMs = if (extracted.durationMs > 0L) extracted.durationMs else spec.durationSeconds * 1000L,
                     formatBadge = "WAV 16-BIT",
                     folderName = "Lofi Wave Studio Masters",
                     dateAddedMillis = System.currentTimeMillis() - (idx * 60_000L),
-                    albumArtUri = null,
+                    albumArtUri = extracted.albumArtUri,
                     lyricsOrNotes = spec.lyricsOrNotes,
-                    isBuiltInSample = true
+                    isBuiltInSample = true,
+                    genre = "Lo-Fi Chillhop",
+                    sampleRateHz = extracted.sampleRateHz,
+                    bitrateKbps = extracted.bitrateKbps,
+                    trackNumber = idx + 1,
+                    channelCount = extracted.channelCount,
+                    bitsPerSample = extracted.bitsPerSample
                 )
             )
         }

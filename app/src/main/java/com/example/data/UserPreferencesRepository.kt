@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.model.AudioPlaybackQuality
 import com.example.model.EqualizerState
 import com.example.model.LiveSoundMode
 import com.example.model.LofiDspParameters
@@ -23,6 +24,7 @@ data class AppPreferencesState(
     val accentTheme: AccentTheme = AccentTheme.ANIME_LOFI_NIGHT,
     val pureAmoledBlack: Boolean = false,
     val highQualityDecoding: Boolean = true,
+    val audioPlaybackQuality: AudioPlaybackQuality = AudioPlaybackQuality.HIGH_QUALITY,
     val lastSelectedPresetId: String = "rainy_night",
     val lastPlayedTrackId: String? = null,
     val lastPlayedPositionMs: Long = 0L,
@@ -36,6 +38,7 @@ class UserPreferencesRepository(private val context: Context) {
         val ACCENT_THEME = stringPreferencesKey("accent_theme")
         val PURE_AMOLED = booleanPreferencesKey("pure_amoled_black")
         val HIGH_QUALITY_DECODING = booleanPreferencesKey("high_quality_decoding")
+        val AUDIO_PLAYBACK_QUALITY = stringPreferencesKey("audio_playback_quality")
         val LAST_PLAYED_TRACK_ID = stringPreferencesKey("last_played_track_id")
         val LAST_PLAYED_POSITION_MS = longPreferencesKey("last_played_position_ms")
 
@@ -76,9 +79,11 @@ class UserPreferencesRepository(private val context: Context) {
 
         // EQ State Keys
         val EQ_ENABLED = booleanPreferencesKey("eq_enabled")
+        val EQ_FIVE_BAND_MODE = booleanPreferencesKey("eq_five_band_mode")
         val EQ_PRESET_NAME = stringPreferencesKey("eq_preset_name")
         val EQ_BANDS_CSV = stringPreferencesKey("eq_bands_csv")
         val EQ_BASS_DB = floatPreferencesKey("eq_bass_db")
+        val EQ_MIDRANGE_DB = floatPreferencesKey("eq_midrange_db")
         val EQ_TREBLE_DB = floatPreferencesKey("eq_treble_db")
         val EQ_BALANCE = floatPreferencesKey("eq_balance")
         val EQ_NORMALIZE = booleanPreferencesKey("eq_normalize")
@@ -93,6 +98,10 @@ class UserPreferencesRepository(private val context: Context) {
 
         val themeName = prefs[Keys.ACCENT_THEME] ?: AccentTheme.ANIME_LOFI_NIGHT.name
         val accentTheme = runCatching { AccentTheme.valueOf(themeName) }.getOrDefault(AccentTheme.ANIME_LOFI_NIGHT)
+
+        val qualityName = prefs[Keys.AUDIO_PLAYBACK_QUALITY] ?: AudioPlaybackQuality.HIGH_QUALITY.name
+        val playbackQuality = runCatching { AudioPlaybackQuality.valueOf(qualityName) }
+            .getOrDefault(AudioPlaybackQuality.HIGH_QUALITY)
 
         val soundModeName = prefs[Keys.SOUND_MODE] ?: defDsp.soundMode.name
         val soundMode = runCatching { LiveSoundMode.valueOf(soundModeName) }.getOrDefault(defDsp.soundMode)
@@ -139,9 +148,11 @@ class UserPreferencesRepository(private val context: Context) {
 
         val eq = EqualizerState(
             isEnabled = prefs[Keys.EQ_ENABLED] ?: defEq.isEnabled,
+            isFiveBandMode = prefs[Keys.EQ_FIVE_BAND_MODE] ?: defEq.isFiveBandMode,
             presetName = prefs[Keys.EQ_PRESET_NAME] ?: defEq.presetName,
             bandGainsDb = finalBands,
             bassBoostDb = prefs[Keys.EQ_BASS_DB] ?: defEq.bassBoostDb,
+            midrangeBoostDb = prefs[Keys.EQ_MIDRANGE_DB] ?: defEq.midrangeBoostDb,
             trebleBoostDb = prefs[Keys.EQ_TREBLE_DB] ?: defEq.trebleBoostDb,
             stereoBalance = prefs[Keys.EQ_BALANCE] ?: defEq.stereoBalance,
             volumeNormalization = prefs[Keys.EQ_NORMALIZE] ?: defEq.volumeNormalization,
@@ -154,6 +165,7 @@ class UserPreferencesRepository(private val context: Context) {
             accentTheme = accentTheme,
             pureAmoledBlack = prefs[Keys.PURE_AMOLED] ?: (accentTheme == AccentTheme.AMOLED_BLACK),
             highQualityDecoding = prefs[Keys.HIGH_QUALITY_DECODING] ?: true,
+            audioPlaybackQuality = playbackQuality,
             lastSelectedPresetId = dsp.presetId,
             lastPlayedTrackId = prefs[Keys.LAST_PLAYED_TRACK_ID],
             lastPlayedPositionMs = prefs[Keys.LAST_PLAYED_POSITION_MS] ?: 0L,
@@ -210,9 +222,11 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun saveEqualizerState(eq: EqualizerState) {
         context.lofiDataStore.edit { prefs ->
             prefs[Keys.EQ_ENABLED] = eq.isEnabled
+            prefs[Keys.EQ_FIVE_BAND_MODE] = eq.isFiveBandMode
             prefs[Keys.EQ_PRESET_NAME] = eq.presetName
             prefs[Keys.EQ_BANDS_CSV] = eq.bandGainsDb.joinToString(",")
             prefs[Keys.EQ_BASS_DB] = eq.bassBoostDb
+            prefs[Keys.EQ_MIDRANGE_DB] = eq.midrangeBoostDb
             prefs[Keys.EQ_TREBLE_DB] = eq.trebleBoostDb
             prefs[Keys.EQ_BALANCE] = eq.stereoBalance
             prefs[Keys.EQ_NORMALIZE] = eq.volumeNormalization
@@ -227,6 +241,13 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.ACCENT_THEME] = theme.name
             prefs[Keys.PURE_AMOLED] = pureAmoled
             prefs[Keys.HIGH_QUALITY_DECODING] = highQualityDecoding
+        }
+    }
+
+    suspend fun saveAudioPlaybackQuality(quality: AudioPlaybackQuality) {
+        context.lofiDataStore.edit { prefs ->
+            prefs[Keys.AUDIO_PLAYBACK_QUALITY] = quality.name
+            prefs[Keys.HIGH_QUALITY_DECODING] = quality != AudioPlaybackQuality.ORIGINAL_QUALITY
         }
     }
 }

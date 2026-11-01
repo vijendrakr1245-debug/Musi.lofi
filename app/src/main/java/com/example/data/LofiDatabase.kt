@@ -27,7 +27,13 @@ data class ImportedTrackEntity(
     val folderName: String,
     val dateAddedMillis: Long,
     val albumArtUri: String?,
-    val lyricsOrNotes: String
+    val lyricsOrNotes: String,
+    val genre: String = "Lo-Fi / Instrumental",
+    val sampleRateHz: Int = 44100,
+    val bitrateKbps: Int = 1411,
+    val trackNumber: Int? = null,
+    val channelCount: Int = 2,
+    val bitsPerSample: Int = 16
 ) {
     fun toTrackItem(): TrackItem = TrackItem(
         id = id,
@@ -41,7 +47,13 @@ data class ImportedTrackEntity(
         dateAddedMillis = dateAddedMillis,
         albumArtUri = albumArtUri,
         lyricsOrNotes = lyricsOrNotes,
-        isBuiltInSample = false
+        isBuiltInSample = false,
+        genre = genre,
+        sampleRateHz = sampleRateHz,
+        bitrateKbps = bitrateKbps,
+        trackNumber = trackNumber,
+        channelCount = channelCount,
+        bitsPerSample = bitsPerSample
     )
 }
 
@@ -148,6 +160,7 @@ data class CustomEqPresetEntity(
     val gainsCsv: String,
     val bassBoostDb: Float,
     val trebleBoostDb: Float,
+    val midrangeBoostDb: Float = 0.0f,
     val createdAtMillis: Long = System.currentTimeMillis()
 )
 
@@ -251,7 +264,7 @@ interface LofiDao {
         CustomLofiPresetEntity::class,
         CustomEqPresetEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class LofiDatabase : RoomDatabase() {

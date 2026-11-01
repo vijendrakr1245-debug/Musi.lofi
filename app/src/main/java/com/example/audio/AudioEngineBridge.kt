@@ -11,6 +11,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import com.example.model.AudioPlaybackQuality
 import com.example.model.EqualizerState
 import com.example.model.LiveSoundMode
 import com.example.model.LofiDspParameters
@@ -19,14 +20,13 @@ import kotlin.math.pow
 
 /**
  * Singleton Audio Engine Bridge connecting the Foreground MediaSessionService,
- * the Real-Time LofiDspAudioProcessor, the AmbientSoundEngine, and the UI ViewModel.
+ * the Real-Time LofiDspAudioProcessor, and the UI ViewModel.
  */
 @OptIn(UnstableApi::class)
 object AudioEngineBridge {
 
     val dspProcessor = LofiDspAudioProcessor()
     val pcmAudioEngine = AudioEngine()
-    val ambientSoundEngine = AmbientSoundEngine()
 
     @Volatile
     private var exoPlayerInstance: ExoPlayer? = null
@@ -65,6 +65,10 @@ object AudioEngineBridge {
         player.repeatMode = Player.REPEAT_MODE_ALL
         exoPlayerInstance = player
         return player
+    }
+
+    fun applyAudioPlaybackQuality(quality: AudioPlaybackQuality) {
+        dspProcessor.updatePlaybackQuality(quality)
     }
 
     fun applyLofiParameters(params: LofiDspParameters) {
@@ -110,7 +114,6 @@ object AudioEngineBridge {
 
     @Synchronized
     fun releasePlayer() {
-        ambientSoundEngine.stopAll()
         pcmAudioEngine.stopAndRelease()
         exoPlayerInstance?.release()
         exoPlayerInstance = null

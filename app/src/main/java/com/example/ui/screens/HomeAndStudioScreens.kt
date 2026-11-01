@@ -27,15 +27,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.NightlightRound
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RestartAlt
@@ -44,6 +48,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Spa
+import androidx.compose.material.icons.filled.SurroundSound
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.AlertDialog
@@ -82,7 +87,6 @@ import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.PlaybackHistoryEntity
 import com.example.model.AiMoodRecommendation
-import com.example.model.AmbientLayerType
 import com.example.model.BuiltInLofiPresets
 import com.example.model.LibraryFilterTab
 import com.example.model.LiveSoundMode
@@ -92,6 +96,7 @@ import com.example.model.MusicMoodAnalysisResult
 import com.example.model.TrackItem
 import com.example.model.VisualizerMode
 import com.example.model.VisualizerSnapshot
+import com.example.ui.components.AnimatedLofiWaveLogo
 import com.example.ui.components.HifiLofiModeToggleBanner
 import com.example.ui.components.OriginalLofiSegmentedControl
 import com.example.ui.components.RealTimeAudioVisualizer
@@ -150,11 +155,9 @@ fun HomeScreen(
     onOpenSettings: () -> Unit = {},
     onOpenLibraryCollection: (LibraryFilterTab) -> Unit = {},
     onExpandNowPlaying: () -> Unit,
-    ambientLayerVolumes: Map<AmbientLayerType, Float> = emptyMap(),
     onSelectSoundMode: (LiveSoundMode) -> Unit = {},
     onOpenMusicConverter: () -> Unit = {},
-    onChangeAmbientVolume: (AmbientLayerType, Float) -> Unit = { _, _ -> },
-    onStopAllAmbient: () -> Unit = {}
+    onOpenThemes: () -> Unit = {}
 ) {
     val activeTrack = currentTrack ?: allTracks.firstOrNull()
     val isFavorite = activeTrack?.id in favoriteIds
@@ -177,16 +180,16 @@ fun HomeScreen(
                 accent = ElectricPurpleBright
             ),
             HomeMoodCardSpec(
-                presetId = "rainy_night",
-                displayTitle = "Rainy Night",
-                subtitle = "Cozy rain & midnight warmth",
-                icon = Icons.Default.WaterDrop,
+                presetId = "vinyl_classic",
+                displayTitle = "Vinyl Classic",
+                subtitle = "Warm turntable & phono curve",
+                icon = Icons.Default.Album,
                 accent = NeonCyan
             ),
             HomeMoodCardSpec(
                 presetId = "dreamy_lofi",
                 displayTitle = "Dreamy",
-                subtitle = " Lush stereo air & drift",
+                subtitle = "Lush stereo air & drift",
                 icon = Icons.Default.AutoAwesome,
                 accent = VinylRose
             ),
@@ -217,7 +220,7 @@ fun HomeScreen(
             .padding(horizontal = 20.dp)
             .testTag("home_screen")
     ) {
-        // 1. TOP SECTION: LOFI WAVE Logo, "Your Music, Your Mood", Settings Icon
+        // 1. TOP SECTION: New Animated LOFI WAVE Logo, "Your Music, Your Mood", Themes & Settings Icons
         item {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -227,55 +230,64 @@ fun HomeScreen(
                     .padding(top = 4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(13.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(ElectricPurple, NeonCyan)
-                                )
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.GraphicEq,
-                            contentDescription = "LOFI WAVE Logo",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+                    AnimatedLofiWaveLogo(
+                        size = 48.dp,
+                        isPlaying = isPlaying,
+                        modifier = Modifier.clickable { onExpandNowPlaying() }
+                    )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
                             text = "LOFI WAVE",
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.ExtraBold,
                             color = TextPrimary
                         )
                         Text(
-                            text = "Your Music, Your Mood",
+                            text = "Good Evening • Your Music, Your Mood",
                             style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary
+                            color = NeonCyan
                         )
                     }
                 }
 
-                IconButton(
-                    onClick = onOpenSettings,
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(ElevatedCharcoal)
-                        .border(1.dp, SubtleBorder, CircleShape)
-                        .testTag("home_settings_button")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Settings",
-                        tint = TextPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    IconButton(
+                        onClick = onOpenThemes,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(ElevatedCharcoal)
+                            .border(1.dp, ElectricPurple.copy(alpha = 0.7f), CircleShape)
+                            .testTag("home_themes_header_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Palette,
+                            contentDescription = "Themes",
+                            tint = VinylRose,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(ElevatedCharcoal)
+                            .border(1.dp, SubtleBorder, CircleShape)
+                            .testTag("home_settings_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
@@ -422,8 +434,13 @@ fun HomeScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable {
-                                    if (currentTrack != null) onExpandNowPlaying()
+                                    if (currentTrack != null) {
+                                        onExpandNowPlaying()
+                                    } else if (activeTrack != null) {
+                                        onPlayTrack(activeTrack)
+                                    }
                                 }
+                                .testTag("home_current_song_info")
                         ) {
                             Text(
                                 text = activeTrack?.title ?: "Select a Song to Begin",
@@ -434,10 +451,10 @@ fun HomeScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = activeTrack?.let { "${it.artist} • ${it.album}" }
+                                text = activeTrack?.let { "${it.artist} • Tap for Full Player" }
                                     ?: "Import or tap any track below",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = NeonCyan,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -494,7 +511,7 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Previous, Large Play/Pause, and Next Controls
+                    // Previous, Large Gradient Glowing Play/Pause, and Next Controls
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
@@ -503,9 +520,10 @@ fun HomeScreen(
                         IconButton(
                             onClick = onSkipPrevious,
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(50.dp)
                                 .clip(CircleShape)
-                                .background(GlassSurface.copy(alpha = 0.65f))
+                                .background(GlassSurface.copy(alpha = 0.85f))
+                                .border(1.dp, SubtleBorder, CircleShape)
                                 .testTag("home_previous_button")
                         ) {
                             Icon(
@@ -521,14 +539,15 @@ fun HomeScreen(
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(66.dp)
+                                .size(68.dp)
                                 .scale(playButtonScale)
                                 .clip(CircleShape)
                                 .background(
                                     Brush.linearGradient(
-                                        colors = listOf(ElectricPurple, NeonCyan)
+                                        colors = listOf(ElectricPurple, NeonCyan, VinylRose)
                                     )
                                 )
+                                .border(1.5.dp, Color.White.copy(alpha = 0.35f), CircleShape)
                                 .clickable {
                                     if (currentTrack != null) {
                                         onTogglePlayPause()
@@ -551,9 +570,10 @@ fun HomeScreen(
                         IconButton(
                             onClick = onSkipNext,
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(50.dp)
                                 .clip(CircleShape)
-                                .background(GlassSurface.copy(alpha = 0.65f))
+                                .background(GlassSurface.copy(alpha = 0.85f))
+                                .border(1.dp, SubtleBorder, CircleShape)
                                 .testTag("home_next_button")
                         ) {
                             Icon(
@@ -565,6 +585,53 @@ fun HomeScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // 2B. FEATURE SHORTCUTS ROW: Live Lo-Fi • 8D Audio • 3D Spatial • Music Studio (Part 3)
+        item {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("home_quick_shortcuts_row")
+            ) {
+                HomeQuickShortcutPill(
+                    label = "Live Lo-Fi",
+                    subtitle = if (dspParams.isLiveLofiEnabled) "Active ✓" else "Tap to Enable",
+                    icon = Icons.Default.Tune,
+                    accent = ElectricPurpleBright,
+                    onClick = { onToggleLofiMode(!dspParams.isLiveLofiEnabled) },
+                    testTag = "home_shortcut_live_lofi",
+                    modifier = Modifier.weight(1f)
+                )
+                HomeQuickShortcutPill(
+                    label = "8D Audio",
+                    subtitle = if (dspParams.soundMode == LiveSoundMode.EIGHT_D_ULTRA) "Active ✓" else "360° Orbit",
+                    icon = Icons.Default.Headphones,
+                    accent = NeonCyan,
+                    onClick = { onSelectSoundMode(LiveSoundMode.EIGHT_D_ULTRA) },
+                    testTag = "home_shortcut_8d_audio",
+                    modifier = Modifier.weight(1f)
+                )
+                HomeQuickShortcutPill(
+                    label = "3D Spatial",
+                    subtitle = if (dspParams.soundMode == LiveSoundMode.THREE_D_SPATIAL) "Active ✓" else "Binaural HRTF",
+                    icon = Icons.Default.SurroundSound,
+                    accent = VinylRose,
+                    onClick = { onSelectSoundMode(LiveSoundMode.THREE_D_SPATIAL) },
+                    testTag = "home_shortcut_3d_spatial",
+                    modifier = Modifier.weight(1f)
+                )
+                HomeQuickShortcutPill(
+                    label = "Music Studio",
+                    subtitle = "Lo-Fi • Phonk • Bass",
+                    icon = Icons.Default.GraphicEq,
+                    accent = StudioEmerald,
+                    onClick = { onOpenMusicConverter() },
+                    testTag = "home_shortcut_music_studio",
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
@@ -1014,37 +1081,261 @@ fun HomeScreen(
             }
         }
 
-        // 5B. AMBIENT SOUND MIXER ON HOME SCREEN (Rain, Ocean, Wind, Night, Birds, Thunderstorm)
+        // 5B. RECENTLY PLAYED SECTION (Tapping any song plays it and opens Full-Screen Music Player)
         item {
-            AmbientSoundMixerSection(
-                layerVolumes = ambientLayerVolumes,
-                onChangeLayerVolume = onChangeAmbientVolume,
-                onStopAll = onStopAllAmbient
-            )
+            val recentTracks = remember(history, allTracks) {
+                val trackMap = allTracks.associateBy { it.id }
+                val fromHistory = history.mapNotNull { trackMap[it.trackId] }.distinctBy { it.id }
+                if (fromHistory.isNotEmpty()) fromHistory.take(8) else allTracks.take(4)
+            }
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("home_recently_played_section")
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = "Recently Played",
+                            tint = NeonCyan,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "RECENTLY PLAYED",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = NeonCyan
+                        )
+                    }
+                    Text(
+                        text = "See All →",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ElectricPurpleBright,
+                        modifier = Modifier.clickable {
+                            onOpenLibraryCollection(LibraryFilterTab.RECENTLY_PLAYED)
+                        }
+                    )
+                }
+
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(recentTracks, key = { "recent_${it.id}" }) { rTrack ->
+                        val isCurrent = currentTrack?.id == rTrack.id
+                        Surface(
+                            color = if (isCurrent) ElectricPurple.copy(alpha = 0.26f) else ElevatedCharcoal,
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier
+                                .width(156.dp)
+                                .border(
+                                    width = if (isCurrent) 1.5.dp else 1.dp,
+                                    color = if (isCurrent) NeonCyan else SubtleBorder,
+                                    shape = RoundedCornerShape(18.dp)
+                                )
+                                .clickable { onPlayTrack(rTrack) }
+                                .testTag("recent_track_card_${rTrack.id}")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(92.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(DeepObsidian)
+                                ) {
+                                    if (!rTrack.albumArtUri.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = Uri.parse(rTrack.albumArtUri),
+                                            contentDescription = rTrack.title,
+                                            contentScale = ContentScale.Crop,
+                                            error = painterResource(id = R.drawable.img_lofi_studio_banner),
+                                            placeholder = painterResource(id = R.drawable.img_lofi_studio_banner),
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Image(
+                                            painter = painterResource(id = R.drawable.img_lofi_studio_banner),
+                                            contentDescription = rTrack.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(ElectricPurple, NeonCyan)
+                                                )
+                                            )
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isCurrent && isPlaying) Icons.Default.GraphicEq else Icons.Default.PlayArrow,
+                                            contentDescription = "Play",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                Column {
+                                    Text(
+                                        text = rTrack.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = if (isCurrent) NeonCyan else TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = rTrack.artist,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        // 6. CLEAN TRACK LIST PREVIEW (Uncrowded with Generous Whitespace)
+        // 6. FAVORITE SONGS SECTION (Part 3 Bottom Section 2)
+        item {
+            val favoriteTracks = remember(allTracks, favoriteIds) {
+                allTracks.filter { it.id in favoriteIds }.take(6)
+            }
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("home_favorite_songs_section")
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Favorite,
+                            contentDescription = "Favorite Songs",
+                            tint = VinylRose,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "FAVORITE SONGS",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = VinylRose
+                        )
+                    }
+                    Text(
+                        text = "See All →",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ElectricPurpleBright,
+                        modifier = Modifier.clickable {
+                            onOpenLibraryCollection(LibraryFilterTab.FAVORITES)
+                        }
+                    )
+                }
+
+                if (favoriteTracks.isEmpty()) {
+                    Surface(
+                        color = ElevatedCharcoal,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, SubtleBorder, RoundedCornerShape(18.dp))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.padding(14.dp)
+                        ) {
+                            Text(
+                                text = "Tap the heart icon on any song to save it to your Favorites.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        favoriteTracks.forEach { favTrack ->
+                            TrackRowCard(
+                                track = favTrack,
+                                isCurrent = currentTrack?.id == favTrack.id,
+                                isPlaying = isPlaying,
+                                isFavorite = true,
+                                onPlay = { onPlayTrack(favTrack) },
+                                onToggleFavorite = { onToggleFavorite(favTrack.id) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 7. RECENTLY ADDED SECTION (Part 3 Bottom Section 3)
         item {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("home_recently_added_section")
             ) {
-                Text(
-                    text = "YOUR TRACKS",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = TextSecondary
-                )
-                Text(
-                    text = "Scan Device",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NeonCyan,
-                    modifier = Modifier.clickable { onScanDeviceClick() }
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.NewReleases,
+                        contentDescription = "Recently Added",
+                        tint = StudioEmerald,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "RECENTLY ADDED",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = StudioEmerald
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Scan Device",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NeonCyan,
+                        modifier = Modifier.clickable { onScanDeviceClick() }
+                    )
+                    Text(
+                        text = "See All →",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ElectricPurpleBright,
+                        modifier = Modifier.clickable {
+                            onOpenLibraryCollection(LibraryFilterTab.RECENTLY_ADDED)
+                        }
+                    )
+                }
             }
         }
 
-        items(allTracks.take(8), key = { it.id }) { track ->
+        val recentlyAddedTracks = allTracks.sortedByDescending { it.dateAddedMillis }.take(8)
+        items(recentlyAddedTracks, key = { it.id }) { track ->
             TrackRowCard(
                 track = track,
                 isCurrent = currentTrack?.id == track.id,
@@ -1052,6 +1343,62 @@ fun HomeScreen(
                 isFavorite = track.id in favoriteIds,
                 onPlay = { onPlayTrack(track) },
                 onToggleFavorite = { onToggleFavorite(track.id) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeQuickShortcutPill(
+    label: String,
+    subtitle: String,
+    icon: ImageVector,
+    accent: Color,
+    onClick: () -> Unit,
+    testTag: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = ElevatedCharcoal,
+        shape = RoundedCornerShape(18.dp),
+        modifier = modifier
+            .border(1.dp, accent.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+            .clickable { onClick() }
+            .testTag(testTag)
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.20f))
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = accent,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = accent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -1148,23 +1495,62 @@ fun TrackRowCard(
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(48.dp)
                     .clip(RoundedCornerShape(13.dp))
-                    .background(
-                        if (isCurrent) ElectricPurple else GlassSurface
+                    .background(DeepObsidian)
+                    .border(
+                        1.dp,
+                        if (isCurrent) NeonCyan else SubtleBorder,
+                        RoundedCornerShape(13.dp)
                     )
             ) {
-                Icon(
-                    imageVector = if (isCurrent && isPlaying) Icons.Default.GraphicEq else Icons.Default.PlayArrow,
-                    contentDescription = "Play",
-                    tint = if (isCurrent) Color.White else NeonCyan
-                )
+                if (!track.albumArtUri.isNullOrBlank()) {
+                    AsyncImage(
+                        model = Uri.parse(track.albumArtUri),
+                        contentDescription = track.title,
+                        contentScale = ContentScale.Crop,
+                        error = painterResource(id = R.drawable.img_lofi_studio_banner),
+                        placeholder = painterResource(id = R.drawable.img_lofi_studio_banner),
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(id = R.drawable.img_lofi_studio_banner),
+                        contentDescription = track.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isCurrent) ElectricPurple.copy(alpha = 0.90f)
+                            else DeepObsidian.copy(alpha = 0.72f)
+                        )
+                ) {
+                    Icon(
+                        imageVector = if (isCurrent && isPlaying) Icons.Default.GraphicEq else Icons.Default.PlayArrow,
+                        contentDescription = "Play",
+                        tint = if (isCurrent) Color.White else NeonCyan,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if ((track.trackNumber ?: 0) > 0) {
+                        Text(
+                            text = "#${track.trackNumber} ",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeonCyan
+                        )
+                    }
                     Text(
                         text = track.title,
                         style = MaterialTheme.typography.titleMedium,
@@ -1181,16 +1567,23 @@ fun TrackRowCard(
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = track.formatBadge,
+                            text = "${track.formatBadge} • ${track.sampleRateKhzText}",
                             style = MaterialTheme.typography.labelSmall,
                             color = ElectricPurpleBright
                         )
                     }
                 }
                 Text(
-                    text = "${track.artist} • ${formatDurationMillis(track.durationMs)}",
+                    text = "${track.artist} • ${track.album} • ${formatDurationMillis(track.durationMs)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${track.genre} • ${track.bitrateKbps} kbps",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

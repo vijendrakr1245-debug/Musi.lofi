@@ -2,12 +2,10 @@ package com.example
 
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
-import com.example.audio.AmbientSoundEngine
 import com.example.audio.AudioEngine
 import com.example.audio.LofiDspAudioProcessor
 import com.example.audio.MusicConverterEngine
 import com.example.audio.MusicMoodAnalyzer
-import com.example.model.AmbientLayerType
 import com.example.model.BuiltInConverterPresets
 import com.example.model.BuiltInLofiPresets
 import com.example.model.ConverterCategory
@@ -220,8 +218,12 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun verifyMusicConverterEngineAndAll22ConversionPresets() {
-        assertTrue("Expected at least 22 converter presets", BuiltInConverterPresets.ALL.size >= 22)
+    fun verifyMusicConverterEngineAndAllStudioConversionPresets() {
+        assertEquals("Expected 21 clean converter presets across 4 Studio categories", 21, BuiltInConverterPresets.ALL.size)
+        assertFalse(
+            "Unwanted Rainy Lo-Fi preset must be removed",
+            BuiltInConverterPresets.ALL.any { it.id == "conv_rainy_lofi" }
+        )
         for (cat in ConverterCategory.entries) {
             assertTrue(
                 "Expected category ${cat.displayName} to have presets",
@@ -268,22 +270,38 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun verifyAmbientSoundEngineSynthesizesAllSixLayersWithoutClipping() {
-        val engine = AmbientSoundEngine()
-        for (layer in AmbientLayerType.entries) {
-            val volumes = AmbientLayerType.entries.associateWith { if (it == layer) 0.9f else 0f }
-            val chunk = engine.synthesizeStereoChunk(volumes = volumes, frames = 2048, sampleRate = 44100)
-            assertEquals(4096, chunk.size)
-            var nonZero = 0
-            var maxAbs = 0
-            for (s in chunk) {
-                val a = abs(s.toInt())
-                if (a > 0) nonZero++
-                if (a > maxAbs) maxAbs = a
-            }
-            assertTrue("Expected ambient layer ${layer.displayName} to synthesize non-zero audio", nonZero > 50)
-            assertTrue("Expected ambient layer ${layer.displayName} not to clip ($maxAbs)", maxAbs < 32767)
-        }
+    fun verifyStudioCategoriesAndCleanAudioWithoutAmbientRainNoise() {
+        val categories = ConverterCategory.entries.map { it.displayName }
+        assertEquals(
+            listOf("Lo-Fi", "Phonk", "Bass", "Other Audio Effects"),
+            categories
+        )
+        val lofiNames = BuiltInConverterPresets.byCategory(ConverterCategory.LOFI).map { it.name }
+        assertTrue("Classic Lo-Fi" in lofiNames)
+        assertTrue("Soft Lo-Fi" in lofiNames)
+        assertTrue("Dreamy Lo-Fi" in lofiNames)
+        assertTrue("Vinyl-style Lo-Fi" in lofiNames)
+
+        val phonkNames = BuiltInConverterPresets.byCategory(ConverterCategory.PHONK).map { it.name }
+        assertTrue("Drift Phonk" in phonkNames)
+        assertTrue("Dark Phonk" in phonkNames)
+        assertTrue("Aggressive Phonk" in phonkNames)
+
+        val bassNames = BuiltInConverterPresets.byCategory(ConverterCategory.BASS).map { it.name }
+        assertTrue("Bass Boost" in bassNames)
+        assertTrue("Deep Bass" in bassNames)
+        assertTrue("Ultra Bass" in bassNames)
+        assertTrue("Punchy Bass" in bassNames)
+
+        val otherNames = BuiltInConverterPresets.byCategory(ConverterCategory.OTHER_STYLES).map { it.name }
+        assertTrue("Slowed + Reverb" in otherNames)
+        assertTrue("Nightcore" in otherNames)
+        assertTrue("Echo" in otherNames)
+        assertTrue("Retro/Vintage" in otherNames)
+        assertTrue("Treble Boost" in otherNames)
+        assertTrue("Vocal Focus" in otherNames)
+        assertTrue("8D Audio" in otherNames)
+        assertTrue("3D Spatial Audio" in otherNames)
     }
 
     @Test
@@ -535,5 +553,76 @@ class ExampleUnitTest {
         }
         assertNotEquals(lofiDiffSum, hifiDiffSum)
         assertTrue("Expected Hi-Fi mode to bypass Lo-Fi DSP", hifiDiffSum < 5000L)
+    }
+
+    @Test
+    fun verifyPart14ProfessionalEqualizerBassEnhancementAndSimultaneousEffects() {
+        // 1. Verify Rock, Pop, Classical, Jazz, and Vocal built-in EQ presets exist
+        val eqPresets = EqualizerState.BUILT_IN_EQ_PRESETS
+        for (required in listOf("Rock", "Pop", "Classical", "Jazz", "Vocal")) {
+            val curve = eqPresets[required]
+            assertNotNull("Expected built-in EQ preset '$required' to exist", curve)
+            assertEquals(10, curve!!.size)
+        }
+        assertEquals(5, EqualizerState.FIVE_BAND_INDICES.size)
+
+        // 2. Verify 32-bit Float PCM input decoding at 48kHz into clean 16-bit stereo output
+        val processor = LofiDspAudioProcessor()
+        val floatFormat = processor.configure(AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_FLOAT))
+        assertEquals(48000, floatFormat.sampleRate)
+        assertEquals(C.ENCODING_PCM_16BIT, floatFormat.encoding)
+        processor.updatePlaybackQuality(com.example.model.AudioPlaybackQuality.MAXIMUM_AVAILABLE_QUALITY)
+
+        // 3. Simultaneously enable Equalizer (Rock + Bass/Midrange/Treble controls) + Deep Bass + Live Lo-Fi + 8D Audio
+        processor.updateEqualizerState(
+            EqualizerState(
+                isEnabled = true,
+                isFiveBandMode = true,
+                presetName = "Rock",
+                bandGainsDb = eqPresets.getValue("Rock"),
+                bassBoostDb = 4.5f,
+                midrangeBoostDb = 2.0f,
+                trebleBoostDb = 2.5f,
+                volumeNormalization = true,
+                smoothTransitions = false
+            )
+        )
+        processor.updateDspParameters(
+            LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.EIGHT_D_ULTRA,
+                masterIntensity = 0.85f,
+                lowPassCutoffHz = 5200f,
+                warmBassBoostDb = 6.5f,
+                midrangeGainDb = 1.5f,
+                analogSaturation = 0.35f,
+                vinylCrackle = 0.18f,
+                spatialIntensity = 0.90f,
+                eightDRotationSpeedHz = 0.22f
+            )
+        )
+        processor.flush()
+
+        val frames = 2048
+        val floatInput = ByteBuffer.allocateDirect(frames * 2 * 4).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until frames) {
+            val t = i.toDouble() / 48000.0
+            val sample = (0.55 * sin(2.0 * PI * 65.0 * t) + 0.35 * sin(2.0 * PI * 1800.0 * t)).toFloat()
+            floatInput.putFloat(sample)
+            floatInput.putFloat(sample)
+        }
+        floatInput.flip()
+
+        processor.queueInput(floatInput)
+        val out = processor.output.order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(frames * 4, out.remaining())
+
+        var maxPeak = 0
+        while (out.hasRemaining()) {
+            val absVal = abs(out.short.toInt())
+            if (absVal > maxPeak) maxPeak = absVal
+        }
+        assertTrue("Expected audible output when stacking EQ + Bass + Lo-Fi + 8D", maxPeak > 2000)
+        assertTrue("Expected anti-clipping headroom to prevent hard clipping (< 32767), got $maxPeak", maxPeak < 32767)
     }
 }

@@ -71,22 +71,38 @@ object DeviceMusicScanner {
                     val dateAdded = cursor.getLong(dateCol) * 1000L
 
                     val formatBadge = detectFormatBadge(displayName, mime)
-                    val artUri = ContentUris.withAppendedId(albumArtBaseUri, albumId).toString()
+                    val mediaStoreArtUri = ContentUris.withAppendedId(albumArtBaseUri, albumId).toString()
+
+                    val extracted = MediaMetadataRetrieverUtil.extractMetadata(
+                        context = context,
+                        uri = contentUri,
+                        fallbackFileName = displayName,
+                        fallbackArtist = rawArtist,
+                        fallbackAlbum = rawAlbum,
+                        fallbackGenre = "Local Music",
+                        existingAlbumArtUri = mediaStoreArtUri
+                    )
 
                     discovered.add(
                         TrackItem(
                             id = "mediastore_$id",
                             uriString = contentUri.toString(),
-                            title = rawTitle,
-                            artist = rawArtist,
-                            album = rawAlbum,
-                            durationMs = durationMs,
-                            formatBadge = formatBadge,
+                            title = extracted.title.ifBlank { rawTitle },
+                            artist = extracted.artist.ifBlank { rawArtist },
+                            album = extracted.album.ifBlank { rawAlbum },
+                            durationMs = if (extracted.durationMs > 0) extracted.durationMs else durationMs,
+                            formatBadge = extracted.audioFormat.ifBlank { formatBadge },
                             folderName = "Device Music",
                             dateAddedMillis = if (dateAdded > 0) dateAdded else System.currentTimeMillis(),
-                            albumArtUri = artUri,
-                            lyricsOrNotes = "Loaded from Android MediaStore ($formatBadge • ${(durationMs / 1000)}s)\nOriginal file preserved unchanged. Real-time PCM Lo-Fi DSP active.",
-                            isBuiltInSample = false
+                            albumArtUri = extracted.albumArtUri ?: mediaStoreArtUri,
+                            lyricsOrNotes = "Loaded from Android MediaStore (${extracted.audioFormat} • ${extracted.sampleRateHz}Hz • ${extracted.bitrateKbps}kbps)\nOriginal file preserved unchanged. Real-time PCM Lo-Fi DSP active.",
+                            isBuiltInSample = false,
+                            genre = extracted.genre,
+                            sampleRateHz = extracted.sampleRateHz,
+                            bitrateKbps = extracted.bitrateKbps,
+                            trackNumber = extracted.trackNumber,
+                            channelCount = extracted.channelCount,
+                            bitsPerSample = extracted.bitsPerSample
                         )
                     )
                 }
@@ -162,44 +178,37 @@ object DeviceMusicScanner {
     ): ImportedTrackEntity? {
         val docFile = DocumentFile.fromSingleUri(context, uri)
         val displayName = fallbackFileName ?: docFile?.name ?: uri.lastPathSegment ?: "Audio Track"
-        val cleanName = displayName.substringAfterLast('/').substringBeforeLast('.')
         val mime = docFile?.type ?: context.contentResolver.getType(uri) ?: "audio/mpeg"
 
-        var title = cleanName
-        var artist = "Local Artist"
-        var album = folderLabel
-        var durationMs = 180_000L
+        val extracted = MediaMetadataRetrieverUtil.extractMetadata(
+            context = context,
+            uri = uri,
+            fallbackFileName = displayName,
+            fallbackArtist = "Local Artist",
+            fallbackAlbum = folderLabel,
+            fallbackGenre = "Local Music",
+            existingAlbumArtUri = null
+        )
 
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(context, uri)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                ?.takeIf { it.isNotBlank() }?.let { title = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                ?.takeIf { it.isNotBlank() }?.let { artist = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                ?.takeIf { it.isNotBlank() }?.let { album = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                ?.toLongOrNull()?.takeIf { it > 0 }?.let { durationMs = it }
-        } catch (_: Exception) {
-            // Keep clean filename fallback
-        } finally {
-            runCatching { retriever.release() }
-        }
-
-        val badge = detectFormatBadge(displayName, mime)
+        val badge = extracted.audioFormat.ifBlank { detectFormatBadge(displayName, mime) }
         return ImportedTrackEntity(
             id = "saf_${uri.toString().hashCode()}",
             uriString = uri.toString(),
-            title = title,
-            artist = artist,
-            album = album,
-            durationMs = durationMs,
+            title = extracted.title,
+            artist = extracted.artist,
+            album = extracted.album,
+            durationMs = extracted.durationMs,
             formatBadge = badge,
             folderName = folderLabel,
             dateAddedMillis = System.currentTimeMillis(),
-            albumArtUri = null,
-            lyricsOrNotes = "Imported via Android Storage Access Framework ($badge)\nPersistent URI permission active. Original audio file untouched."
+            albumArtUri = extracted.albumArtUri,
+            lyricsOrNotes = "Imported via Android Storage Access Framework ($badge • ${extracted.sampleRateHz}Hz • ${extracted.bitrateKbps}kbps)\nPersistent URI permission active. Original audio file untouched.",
+            genre = extracted.genre,
+            sampleRateHz = extracted.sampleRateHz,
+            bitrateKbps = extracted.bitrateKbps,
+            trackNumber = extracted.trackNumber,
+            channelCount = extracted.channelCount,
+            bitsPerSample = extracted.bitsPerSample
         )
     }
 

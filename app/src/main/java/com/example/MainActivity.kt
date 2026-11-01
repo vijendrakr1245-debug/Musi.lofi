@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.components.FullScreenNowPlayingOverlay
+import com.example.ui.components.LofiWaveSplashOverlay
 import com.example.ui.components.MiniPlayerBar
 import com.example.ui.screens.EqualizerScreen
 import com.example.ui.screens.HomeScreen
@@ -78,13 +80,14 @@ import kotlinx.coroutines.delay
 
 enum class LofiNavTab(val label: String, val icon: ImageVector, val testTag: String) {
     HOME("Home", Icons.Default.Home, "nav_tab_home"),
-    MUSIC_CONVERTER("Converter", Icons.Default.GraphicEq, "nav_tab_converter"),
     LIBRARY("Library", Icons.Default.LibraryMusic, "nav_tab_library"),
+    MUSIC_CONVERTER("Studio", Icons.Default.GraphicEq, "nav_tab_converter"),
+    THEMES("Themes", Icons.Default.Palette, "nav_tab_themes"),
+    SETTINGS("Settings", Icons.Default.Settings, "nav_tab_settings"),
     PLAYLISTS("Playlists", Icons.AutoMirrored.Filled.QueueMusic, "nav_tab_playlists"),
     LOFI_STUDIO("Lo-Fi Studio", Icons.Default.Tune, "nav_tab_studio"),
     EQUALIZER("Equalizer", Icons.Default.Equalizer, "nav_tab_equalizer"),
-    MUSIC_MOOD("Music Mood", Icons.Default.AutoAwesome, "nav_tab_mood"),
-    SETTINGS("Settings", Icons.Default.Settings, "nav_tab_settings")
+    MUSIC_MOOD("Music Mood", Icons.Default.AutoAwesome, "nav_tab_mood")
 }
 
 class MainActivity : ComponentActivity() {
@@ -110,6 +113,12 @@ class MainActivity : ComponentActivity() {
 fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
     var currentTab by rememberSaveable { mutableStateOf(LofiNavTab.HOME) }
     var isNowPlayingExpanded by rememberSaveable { mutableStateOf(false) }
+    var showSplashOverlay by rememberSaveable { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        delay(1150L)
+        showSplashOverlay = false
+    }
 
     val allTracks by viewModel.allTracks.collectAsStateWithLifecycle()
     val filteredTracks by viewModel.filteredLibraryTracks.collectAsStateWithLifecycle()
@@ -124,7 +133,6 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
     val eqState by viewModel.eqState.collectAsStateWithLifecycle()
     val visualizerSnapshot by viewModel.visualizerFlow.collectAsStateWithLifecycle()
     val visualizerMode by viewModel.visualizerMode.collectAsStateWithLifecycle()
-    val ambientLayerVolumes by viewModel.ambientLayerVolumes.collectAsStateWithLifecycle()
 
     val selectedConverterCategory by viewModel.selectedConverterCategory.collectAsStateWithLifecycle()
     val selectedConverterPreset by viewModel.selectedConverterPreset.collectAsStateWithLifecycle()
@@ -149,6 +157,7 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
     val accentTheme by viewModel.accentTheme.collectAsStateWithLifecycle()
     val pureAmoled by viewModel.pureAmoledBlack.collectAsStateWithLifecycle()
     val highQualityDecoding by viewModel.highQualityDecoding.collectAsStateWithLifecycle()
+    val audioPlaybackQuality by viewModel.audioPlaybackQuality.collectAsStateWithLifecycle()
     val statusBanner by viewModel.statusBannerMessage.collectAsStateWithLifecycle()
     val moodResult by viewModel.moodAnalysisResult.collectAsStateWithLifecycle()
     val isAnalyzingMood by viewModel.isAnalyzingMood.collectAsStateWithLifecycle()
@@ -251,12 +260,12 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                         )
                     }
 
-                    // 5-Tab Bottom Navigation Bar (Home, Converter, Library, Playlists, Settings)
+                    // 5-Tab Bottom Navigation Bar (Home, Library, Studio, Themes, Settings)
                     val bottomNavTabs = listOf(
                         LofiNavTab.HOME,
-                        LofiNavTab.MUSIC_CONVERTER,
                         LofiNavTab.LIBRARY,
-                        LofiNavTab.PLAYLISTS,
+                        LofiNavTab.MUSIC_CONVERTER,
+                        LofiNavTab.THEMES,
                         LofiNavTab.SETTINGS
                     )
                     NavigationBar(
@@ -318,7 +327,10 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 currentPositionMs = currentPosMs,
                                 durationMs = durationMs,
                                 moodResult = moodResult,
-                                onPlayTrack = { track -> viewModel.playTrack(track) },
+                                onPlayTrack = { track ->
+                                    viewModel.playTrack(track)
+                                    isNowPlayingExpanded = true
+                                },
                                 onTogglePlayPause = { viewModel.togglePlayPause() },
                                 onSkipPrevious = { viewModel.skipPrevious() },
                                 onSkipNext = { viewModel.skipNext() },
@@ -338,11 +350,9 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                     currentTab = LofiNavTab.LIBRARY
                                 },
                                 onExpandNowPlaying = { isNowPlayingExpanded = true },
-                                ambientLayerVolumes = ambientLayerVolumes,
                                 onSelectSoundMode = { mode -> viewModel.setSoundMode(mode) },
                                 onOpenMusicConverter = { currentTab = LofiNavTab.MUSIC_CONVERTER },
-                                onChangeAmbientVolume = { layer, vol -> viewModel.setAmbientLayerVolume(layer, vol) },
-                                onStopAllAmbient = { viewModel.stopAllAmbientSounds() }
+                                onOpenThemes = { currentTab = LofiNavTab.THEMES }
                             )
                         }
                         LofiNavTab.MUSIC_CONVERTER -> {
@@ -360,7 +370,6 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 isBeforeOriginalPreview = isBeforeOriginalPreview,
                                 selectedExportQuality = selectedExportQuality,
                                 exportProgressState = exportProgressState,
-                                ambientLayerVolumes = ambientLayerVolumes,
                                 onSelectCategory = { cat -> viewModel.selectConverterCategory(cat) },
                                 onSelectPreset = { preset -> viewModel.selectConverterPreset(preset) },
                                 onIntensityChange = { intensity -> viewModel.setConverterIntensity(intensity) },
@@ -368,14 +377,15 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 onSelectExportQuality = { q -> viewModel.setExportQuality(q) },
                                 onStartExport = { viewModel.exportCurrentSongWithConverter() },
                                 onCancelExport = { viewModel.cancelExportConversion() },
-                                onPlayTrack = { track -> viewModel.playTrack(track) },
+                                onPlayTrack = { track ->
+                                    viewModel.playTrack(track)
+                                    isNowPlayingExpanded = true
+                                },
                                 onTogglePlayPause = { viewModel.togglePlayPause() },
                                 onImportAudioClick = launchSafSongPicker,
                                 onSelectSoundMode = { mode -> viewModel.setSoundMode(mode) },
                                 onSelectVisualizerMode = { vMode -> viewModel.setVisualizerMode(vMode) },
                                 onUpdateDsp = { transform -> viewModel.updateDspParameter(transform) },
-                                onChangeAmbientVolume = { layer, vol -> viewModel.setAmbientLayerVolume(layer, vol) },
-                                onStopAllAmbient = { viewModel.stopAllAmbientSounds() },
                                 onOpenEqualizer = { currentTab = LofiNavTab.EQUALIZER },
                                 onOpenStudio = { currentTab = LofiNavTab.LOFI_STUDIO },
                                 onBack = { currentTab = LofiNavTab.HOME }
@@ -396,8 +406,14 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 onSearchQueryChange = { q -> viewModel.setSearchQuery(q) },
                                 onSelectTab = { tab -> viewModel.setSelectedLibraryTab(tab) },
                                 onSelectSortOrder = { order -> viewModel.setSortOrder(order) },
-                                onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
-                                onPlayPlaylist = { list, shuffle, repeat -> viewModel.playPlaylist(list, shuffle, repeat) },
+                                onPlayTrack = { track, list ->
+                                    viewModel.playTrack(track, list)
+                                    isNowPlayingExpanded = true
+                                },
+                                onPlayPlaylist = { list, shuffle, repeat ->
+                                    viewModel.playPlaylist(list, shuffle, repeat)
+                                    isNowPlayingExpanded = true
+                                },
                                 onToggleFavorite = { id -> viewModel.toggleFavorite(id) },
                                 onAddTrackToMultiplePlaylists = { tId, plIds -> viewModel.addTrackToMultiplePlaylists(tId, plIds) },
                                 onCreatePlaylistWithTrack = { name, desc, ids -> viewModel.createPlaylist(name, desc, ids) },
@@ -419,8 +435,14 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 onAddTrackToPlaylist = { plId, tId -> viewModel.addTrackToPlaylist(plId, tId) },
                                 onRemoveTrackFromPlaylist = { plId, tId -> viewModel.removeTrackFromPlaylist(plId, tId) },
                                 onReorderPlaylistTracks = { id, orderedIds -> viewModel.reorderPlaylistTracks(id, orderedIds) },
-                                onPlayPlaylist = { list, shuffle, repeat -> viewModel.playPlaylist(list, shuffle, repeat) },
-                                onPlaySingleTrackFromPlaylist = { track, list -> viewModel.playTrack(track, list) },
+                                onPlayPlaylist = { list, shuffle, repeat ->
+                                    viewModel.playPlaylist(list, shuffle, repeat)
+                                    isNowPlayingExpanded = true
+                                },
+                                onPlaySingleTrackFromPlaylist = { track, list ->
+                                    viewModel.playTrack(track, list)
+                                    isNowPlayingExpanded = true
+                                },
                                 onClearHistory = { viewModel.clearHistory() }
                             )
                         }
@@ -449,7 +471,8 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 onUpdateEq = { transform -> viewModel.updateEqualizer(transform) },
                                 onUpdateBand = { idx, gain -> viewModel.updateEqBand(idx, gain) },
                                 onSelectBuiltInPreset = { name, gains -> viewModel.selectBuiltInEqPreset(name, gains) },
-                                onSaveCustomEqPreset = { name -> viewModel.saveCustomEqPreset(name) }
+                                onSaveCustomEqPreset = { name -> viewModel.saveCustomEqPreset(name) },
+                                onApplyBassEnhancementPreset = { presetId -> viewModel.applyQuickBassEnhancementPreset(presetId) }
                             )
                         }
                         LofiNavTab.MUSIC_MOOD -> {
@@ -464,12 +487,25 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 onBack = { currentTab = LofiNavTab.HOME }
                             )
                         }
+                        LofiNavTab.THEMES -> {
+                            com.example.ui.screens.ThemesScreen(
+                                accentTheme = accentTheme,
+                                pureAmoledBlack = pureAmoled,
+                                highQualityDecoding = highQualityDecoding,
+                                onUpdateThemePrefs = { th, amoled, hq -> viewModel.updateThemePreferences(th, amoled, hq) }
+                            )
+                        }
                         LofiNavTab.SETTINGS -> {
                             SettingsScreen(
                                 accentTheme = accentTheme,
                                 pureAmoledBlack = pureAmoled,
                                 highQualityDecoding = highQualityDecoding,
                                 sleepTimerRemainingSec = sleepTimerSec,
+                                eqState = eqState,
+                                audioPlaybackQuality = audioPlaybackQuality,
+                                currentTrack = currentTrack ?: allTracks.firstOrNull(),
+                                onSelectAudioPlaybackQuality = { q -> viewModel.setAudioPlaybackQuality(q) },
+                                onUpdateEq = { transform -> viewModel.updateEqualizer(transform) },
                                 onUpdateThemePrefs = { th, amoled, hq -> viewModel.updateThemePreferences(th, amoled, hq) },
                                 onSetSleepTimerMinutes = { mins -> viewModel.startSleepTimer(mins) },
                                 onImportSongsClick = launchSafSongPicker,
@@ -478,7 +514,8 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 onClearHistory = { viewModel.clearHistory() },
                                 onOpenStudio = { currentTab = LofiNavTab.LOFI_STUDIO },
                                 onOpenEqualizer = { currentTab = LofiNavTab.EQUALIZER },
-                                onOpenMusicConverter = { currentTab = LofiNavTab.MUSIC_CONVERTER }
+                                onOpenMusicConverter = { currentTab = LofiNavTab.MUSIC_CONVERTER },
+                                onOpenThemes = { currentTab = LofiNavTab.THEMES }
                             )
                         }
                     }
@@ -543,11 +580,23 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                     onSelectQueueTrack = { qTrack -> viewModel.playTrack(qTrack, queue) },
                     onSetSleepTimerMinutes = { mins -> viewModel.startSleepTimer(mins) },
                     onOpenLofiStudio = { currentTab = LofiNavTab.LOFI_STUDIO },
+                    onOpenEqualizer = { currentTab = LofiNavTab.EQUALIZER },
                     onOpenMoodScreen = { currentTab = LofiNavTab.MUSIC_MOOD },
                     onSelectSoundMode = { mode -> viewModel.setSoundMode(mode) },
                     onOpenMusicConverter = { currentTab = LofiNavTab.MUSIC_CONVERTER }
                 )
             }
+        }
+
+        // Animated Premium Splash Screen Overlay on App Launch
+        AnimatedVisibility(
+            visible = showSplashOverlay,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            LofiWaveSplashOverlay(
+                onDismiss = { showSplashOverlay = false }
+            )
         }
     }
 }

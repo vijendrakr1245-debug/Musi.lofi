@@ -58,7 +58,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.model.AmbientLayerType
 import com.example.model.BuiltInConverterPresets
 import com.example.model.ConverterCategory
 import com.example.model.ExportProgressState
@@ -273,114 +272,12 @@ fun LiveSoundModesSelectorSection(
 }
 
 /**
- * Reusable Ambient Sound Mixer Panel (Part 6: 6 simultaneous background ambient layers).
- */
-@Composable
-fun AmbientSoundMixerSection(
-    layerVolumes: Map<AmbientLayerType, Float>,
-    onChangeLayerVolume: (AmbientLayerType, Float) -> Unit,
-    onStopAll: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val activeCount = layerVolumes.values.count { it > 0.01f }
-
-    Surface(
-        color = ElevatedCharcoal.copy(alpha = 0.92f),
-        shape = RoundedCornerShape(22.dp),
-        modifier = modifier
-            .fillMaxWidth()
-            .border(1.dp, SubtleBorder, RoundedCornerShape(22.dp))
-            .testTag("ambient_sound_mixer_section")
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Spa,
-                        contentDescription = "Ambient Sound Mixer",
-                        tint = StudioEmerald,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = "AMBIENT SOUND MIXER",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = StudioEmerald
-                        )
-                        Text(
-                            text = if (activeCount > 0) {
-                                "$activeCount ambient soundscape(s) mixing live with music"
-                            } else {
-                                "Mix Rain, Ocean, Wind, Night, Birds & Thunder with music"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary
-                        )
-                    }
-                }
-
-                if (activeCount > 0) {
-                    OutlinedButton(
-                        onClick = onStopAll,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.testTag("ambient_stop_all_button")
-                    ) {
-                        Text("Mute All", style = MaterialTheme.typography.labelSmall, color = VinylRose)
-                    }
-                }
-            }
-
-            AmbientLayerType.entries.forEach { layer ->
-                val vol = layerVolumes[layer] ?: 0f
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "${layer.emoji} ${layer.displayName} (${layer.subtitle})",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (vol > 0.01f) TextPrimary else TextSecondary
-                        )
-                        Text(
-                            text = "${(vol * 100).roundToInt()}%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (vol > 0.01f) StudioEmerald else TextMuted
-                        )
-                    }
-                    Slider(
-                        value = vol,
-                        onValueChange = { newVol -> onChangeLayerVolume(layer, newVol) },
-                        valueRange = 0f..1f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = if (vol > 0.01f) StudioEmerald else TextSecondary,
-                            activeTrackColor = StudioEmerald,
-                            inactiveTrackColor = DeepObsidian
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(26.dp)
-                            .testTag("ambient_slider_${layer.id}")
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * PART 3 & PART 10: MUSIC STYLE CONVERTER STUDIO & EXPORT ENGINE SCREEN.
+ * PART 6: MUSIC STUDIO & CONVERTER SCREEN.
+ * Organizes audio effects into 4 clean categories:
+ * 1. LO-FI (Classic Lo-Fi, Soft Lo-Fi, Dreamy Lo-Fi, Vinyl-style Lo-Fi)
+ * 2. PHONK (Drift Phonk, Dark Phonk, Aggressive Phonk, Brazilian Phonk)
+ * 3. BASS (Bass Boost, Deep Bass, Ultra Bass, Punchy Bass, Sub Bass)
+ * 4. OTHER AUDIO EFFECTS (Slowed + Reverb, Nightcore, Echo, Retro/Vintage, Treble Boost, Vocal Focus, 8D Audio, 3D Spatial Audio)
  */
 @Composable
 fun MusicConverterScreen(
@@ -397,7 +294,6 @@ fun MusicConverterScreen(
     isBeforeOriginalPreview: Boolean,
     selectedExportQuality: ExportQualityOption,
     exportProgressState: ExportProgressState,
-    ambientLayerVolumes: Map<AmbientLayerType, Float>,
     onSelectCategory: (ConverterCategory) -> Unit,
     onSelectPreset: (MusicConverterPreset) -> Unit,
     onIntensityChange: (Float) -> Unit,
@@ -411,8 +307,6 @@ fun MusicConverterScreen(
     onSelectSoundMode: (LiveSoundMode) -> Unit,
     onSelectVisualizerMode: (VisualizerMode) -> Unit,
     onUpdateDsp: ((LofiDspParameters) -> LofiDspParameters) -> Unit,
-    onChangeAmbientVolume: (AmbientLayerType, Float) -> Unit,
-    onStopAllAmbient: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onOpenStudio: () -> Unit,
     onBack: () -> Unit
@@ -456,13 +350,13 @@ fun MusicConverterScreen(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "MUSIC CONVERTER STUDIO",
+                            text = "MUSIC STUDIO",
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
                         )
                         Text(
-                            text = "Lo-Fi • Phonk • Bass • Slowed+Reverb • Nightcore • 8D/3D WAV Export",
+                            text = "Lo-Fi • Phonk • Bass • Other Audio Effects • WAV Export",
                             style = MaterialTheme.typography.bodySmall,
                             color = NeonCyan
                         )
@@ -737,14 +631,14 @@ fun MusicConverterScreen(
             }
         }
 
-        // 4. INTENSITY & FINE-TUNE STUDIO CONTROLS (Speed, Pitch, Echo, Reverb, Bass)
+        // 4. DEDICATED CATEGORY CONTROL VIEW (Clean per-category controls for Lo-Fi, Phonk, Bass, or Other Audio Effects)
         item {
             StudioRackSection(
-                title = "2. CONVERSION INTENSITY & MASTERING PARAMETERS",
-                subtitle = "Adjust effect strength, speed, pitch semitones, echo & bass before exporting"
+                title = "${selectedCategory.displayName.uppercase()} STUDIO CONTROLS",
+                subtitle = "Selected Effect: ${selectedPreset.name} • ${selectedPreset.dspMethodDescription}"
             ) {
                 DspParameterSlider(
-                    label = "Style Conversion Intensity (${selectedPreset.name})",
+                    label = "Effect Intensity (${selectedPreset.name})",
                     valueText = "${(converterIntensity * 100).roundToInt()}%",
                     value = converterIntensity,
                     valueRange = 0.1f..1.0f,
@@ -752,33 +646,137 @@ fun MusicConverterScreen(
                     testTag = "converter_intensity_slider",
                     onValueChange = onIntensityChange
                 )
-                DspParameterSlider(
-                    label = "Playback Speed (Slowed / Nightcore)",
-                    valueText = String.format(Locale.US, "%.2fx", dspParams.playbackSpeed),
-                    value = dspParams.playbackSpeed,
-                    valueRange = 0.65f..1.35f,
-                    accentColor = AnalogAmber,
-                    testTag = "converter_speed_slider",
-                    onValueChange = { v -> onUpdateDsp { it.copy(playbackSpeed = v, isLiveLofiEnabled = true) } }
-                )
-                DspParameterSlider(
-                    label = "Pitch Shift (Semitones)",
-                    valueText = String.format(Locale.US, "%+.1f st", dspParams.pitchSemitones),
-                    value = dspParams.pitchSemitones,
-                    valueRange = -12f..12f,
-                    accentColor = ElectricPurpleBright,
-                    testTag = "converter_pitch_slider",
-                    onValueChange = { v -> onUpdateDsp { it.copy(pitchSemitones = v, isLiveLofiEnabled = true) } }
-                )
-                DspParameterSlider(
-                    label = "Echo / Ping-Pong Delay Mix",
-                    valueText = "${(dspParams.echoMix * 100).roundToInt()}%",
-                    value = dspParams.echoMix,
-                    valueRange = 0f..0.85f,
-                    accentColor = StudioEmerald,
-                    testTag = "converter_echo_slider",
-                    onValueChange = { v -> onUpdateDsp { it.copy(echoMix = v, isLiveLofiEnabled = true) } }
-                )
+
+                when (selectedCategory) {
+                    ConverterCategory.LOFI -> {
+                        DspParameterSlider(
+                            label = "Lo-Fi Low-Pass Warmth Filter",
+                            valueText = "${dspParams.lowPassCutoffHz.roundToInt()} Hz",
+                            value = dspParams.lowPassCutoffHz,
+                            valueRange = 1800f..14000f,
+                            accentColor = ElectricPurpleBright,
+                            testTag = "studio_lofi_lpf_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(lowPassCutoffHz = v, isLiveLofiEnabled = true) } }
+                        )
+                        DspParameterSlider(
+                            label = "Analog Tape Saturation",
+                            valueText = "${(dspParams.analogSaturation * 100).roundToInt()}%",
+                            value = dspParams.analogSaturation,
+                            valueRange = 0f..0.75f,
+                            accentColor = AnalogAmber,
+                            testTag = "studio_lofi_saturation_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(analogSaturation = v, isLiveLofiEnabled = true) } }
+                        )
+                        DspParameterSlider(
+                            label = "Vinyl Crackle & Turntable Dust",
+                            valueText = "${(dspParams.vinylCrackle * 100).roundToInt()}%",
+                            value = dspParams.vinylCrackle,
+                            valueRange = 0f..0.60f,
+                            accentColor = VinylRose,
+                            testTag = "studio_lofi_vinyl_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(vinylCrackle = v, isLiveLofiEnabled = true) } }
+                        )
+                    }
+
+                    ConverterCategory.PHONK -> {
+                        DspParameterSlider(
+                            label = "Phonk Analog Overdrive & Grit",
+                            valueText = "${(dspParams.analogSaturation * 100).roundToInt()}%",
+                            value = dspParams.analogSaturation,
+                            valueRange = 0f..0.90f,
+                            accentColor = VinylRose,
+                            testTag = "studio_phonk_drive_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(analogSaturation = v, isLiveLofiEnabled = true) } }
+                        )
+                        DspParameterSlider(
+                            label = "Cowbell & Midrange Presence",
+                            valueText = String.format(Locale.US, "%+.1f dB", dspParams.midrangeGainDb),
+                            value = dspParams.midrangeGainDb,
+                            valueRange = -6f..6f,
+                            accentColor = AnalogAmber,
+                            testTag = "studio_phonk_mid_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(midrangeGainDb = v, isLiveLofiEnabled = true) } }
+                        )
+                        DspParameterSlider(
+                            label = "808 Sub-Bass Punch",
+                            valueText = String.format(Locale.US, "+%.1f dB", dspParams.warmBassBoostDb),
+                            value = dspParams.warmBassBoostDb,
+                            valueRange = 0f..6f,
+                            accentColor = ElectricPurpleBright,
+                            testTag = "studio_phonk_bass_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(warmBassBoostDb = v, isLiveLofiEnabled = true) } }
+                        )
+                    }
+
+                    ConverterCategory.BASS -> {
+                        DspParameterSlider(
+                            label = "Sub-Bass & Low-Shelf Boost",
+                            valueText = String.format(Locale.US, "+%.1f dB", dspParams.warmBassBoostDb),
+                            value = dspParams.warmBassBoostDb,
+                            valueRange = 0f..6f,
+                            accentColor = ElectricPurpleBright,
+                            testTag = "studio_bass_boost_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(warmBassBoostDb = v, isLiveLofiEnabled = true) } }
+                        )
+                        DspParameterSlider(
+                            label = "Harmonic Warmth Exciter",
+                            valueText = "${(dspParams.analogSaturation * 100).roundToInt()}%",
+                            value = dspParams.analogSaturation,
+                            valueRange = 0f..0.65f,
+                            accentColor = AnalogAmber,
+                            testTag = "studio_bass_harmonic_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(analogSaturation = v, isLiveLofiEnabled = true) } }
+                        )
+                        DspParameterSlider(
+                            label = "Anti-Clip Bus Compression",
+                            valueText = "${(dspParams.softCompression * 100).roundToInt()}%",
+                            value = dspParams.softCompression,
+                            valueRange = 0f..0.80f,
+                            accentColor = StudioEmerald,
+                            testTag = "studio_bass_comp_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(softCompression = v, isLiveLofiEnabled = true) } }
+                        )
+                    }
+
+                    ConverterCategory.OTHER_STYLES -> {
+                        DspParameterSlider(
+                            label = "Playback Speed (Slowed / Nightcore)",
+                            valueText = String.format(Locale.US, "%.2fx", dspParams.playbackSpeed),
+                            value = dspParams.playbackSpeed,
+                            valueRange = 0.65f..1.35f,
+                            accentColor = AnalogAmber,
+                            testTag = "converter_speed_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(playbackSpeed = v, isLiveLofiEnabled = true) } }
+                        )
+                        DspParameterSlider(
+                            label = "Pitch Shift (Semitones)",
+                            valueText = String.format(Locale.US, "%+.1f st", dspParams.pitchSemitones),
+                            value = dspParams.pitchSemitones,
+                            valueRange = -12f..12f,
+                            accentColor = ElectricPurpleBright,
+                            testTag = "converter_pitch_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(pitchSemitones = v, isLiveLofiEnabled = true) } }
+                        )
+                        DspParameterSlider(
+                            label = "Reverb Room Mix",
+                            valueText = "${(dspParams.reverbMix * 100).roundToInt()}%",
+                            value = dspParams.reverbMix,
+                            valueRange = 0f..0.75f,
+                            accentColor = NeonCyan,
+                            testTag = "converter_reverb_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(reverbMix = v, isLiveLofiEnabled = true) } }
+                        )
+                        DspParameterSlider(
+                            label = "Echo / Ping-Pong Delay Mix",
+                            valueText = "${(dspParams.echoMix * 100).roundToInt()}%",
+                            value = dspParams.echoMix,
+                            valueRange = 0f..0.85f,
+                            accentColor = StudioEmerald,
+                            testTag = "converter_echo_slider",
+                            onValueChange = { v -> onUpdateDsp { it.copy(echoMix = v, isLiveLofiEnabled = true) } }
+                        )
+                    }
+                }
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -790,7 +788,7 @@ fun MusicConverterScreen(
                     ) {
                         Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Full DSP Editor", style = MaterialTheme.typography.labelSmall)
+                        Text("Advanced DSP Rack", style = MaterialTheme.typography.labelSmall)
                     }
                     OutlinedButton(
                         onClick = onOpenEqualizer,
@@ -966,16 +964,7 @@ fun MusicConverterScreen(
             )
         }
 
-        // 7. AMBIENT SOUND MIXER SECTION
-        item {
-            AmbientSoundMixerSection(
-                layerVolumes = ambientLayerVolumes,
-                onChangeLayerVolume = onChangeAmbientVolume,
-                onStopAll = onStopAllAmbient
-            )
-        }
-
-        // 8. CONVERTED SONGS HISTORY
+        // 7. CONVERTED SONGS HISTORY
         if (convertedTracks.isNotEmpty()) {
             item {
                 Text(

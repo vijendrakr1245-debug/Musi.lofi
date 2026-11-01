@@ -151,13 +151,44 @@ data class LofiPreset(
     val parameters: LofiDspParameters
 )
 
+/**
+ * Audio Playback Quality Modes (Part 14 – Section 6: Audio Quality Settings).
+ * Honest, transparent DSP and hardware playback quality options.
+ */
+enum class AudioPlaybackQuality(
+    val label: String,
+    val badge: String,
+    val description: String
+) {
+    ORIGINAL_QUALITY(
+        label = "Original Quality",
+        badge = "NATIVE PCM",
+        description = "Bit-transparent native sample rate & original decoded stream without resampling"
+    ),
+    HIGH_QUALITY(
+        label = "High Quality",
+        badge = "64-BIT DSP",
+        description = "High-headroom 64-bit internal biquad filtering, anti-clipping limiter & smooth transitions"
+    ),
+    MAXIMUM_AVAILABLE_QUALITY(
+        label = "Maximum Available Quality",
+        badge = "MAX HARDWARE",
+        description = "Maximum device audio output capability with oversampled analog saturation & TPDF dither"
+    );
+
+    val title: String get() = label
+    val subtitle: String get() = description
+}
+
 @Immutable
 data class EqualizerState(
     val isEnabled: Boolean = false,
     val presetName: String = "Flat Studio",
+    val isFiveBandMode: Boolean = false,
     // 10 bands: 31Hz, 62Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz
     val bandGainsDb: List<Float> = listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
     val bassBoostDb: Float = 0.0f,
+    val midrangeBoostDb: Float = 0.0f,
     val trebleBoostDb: Float = 0.0f,
     val stereoBalance: Float = 0.0f,
     val volumeNormalization: Boolean = true,
@@ -168,9 +199,15 @@ data class EqualizerState(
     companion object {
         val BAND_FREQUENCIES = listOf(31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
         val BAND_LABELS = listOf("31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k")
+        val FIVE_BAND_INDICES = listOf(1, 3, 5, 7, 9) // 62Hz, 250Hz, 1kHz, 4kHz, 16kHz
 
         val BUILT_IN_EQ_PRESETS: Map<String, List<Float>> = linkedMapOf(
             "Flat Studio" to listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
+            "Rock" to listOf(4.2f, 3.4f, 1.6f, -0.8f, -1.5f, -0.6f, 1.4f, 2.8f, 3.6f, 3.8f),
+            "Pop" to listOf(-1.0f, 1.6f, 3.2f, 3.8f, 2.4f, 0.0f, -0.8f, 1.2f, 2.2f, 2.4f),
+            "Classical" to listOf(3.2f, 2.6f, 1.8f, 0.6f, -0.6f, -0.6f, 0.0f, 1.6f, 2.6f, 3.2f),
+            "Jazz" to listOf(2.8f, 2.2f, 1.0f, 1.6f, -1.2f, -1.2f, 0.0f, 1.4f, 2.4f, 2.8f),
+            "Vocal" to listOf(-2.0f, -1.2f, -0.4f, 1.4f, 3.2f, 3.8f, 3.0f, 1.6f, 0.6f, 0.0f),
             "Lo-Fi Warmth" to listOf(1.5f, 2.0f, 1.2f, 0.4f, 0.0f, -0.3f, -0.6f, -1.2f, -1.8f, -2.2f),
             "Deep Sub Bass" to listOf(3.0f, 2.8f, 1.8f, 0.5f, 0.0f, 0.0f, 0.2f, 0.5f, 0.5f, 0.0f),
             "Warm Cassette EQ" to listOf(-1.0f, 1.5f, 2.2f, 1.5f, 0.6f, 0.0f, -1.0f, -2.0f, -3.0f, -3.5f),
@@ -193,8 +230,24 @@ data class TrackItem(
     val dateAddedMillis: Long = System.currentTimeMillis(),
     val albumArtUri: String? = null,
     val lyricsOrNotes: String = "",
-    val isBuiltInSample: Boolean = false
-)
+    val isBuiltInSample: Boolean = false,
+    val genre: String = "Lo-Fi / Instrumental",
+    val sampleRateHz: Int = 44100,
+    val bitrateKbps: Int = 1411,
+    val trackNumber: Int? = null,
+    val channelCount: Int = 2,
+    val bitsPerSample: Int = 16
+) {
+    val sampleRateKhzText: String
+        get() = if (sampleRateHz % 1000 == 0) {
+            "${sampleRateHz / 1000} kHz"
+        } else {
+            String.format(java.util.Locale.US, "%.1f kHz", sampleRateHz / 1000.0)
+        }
+
+    val technicalMetadataSummary: String
+        get() = "$formatBadge • $sampleRateKhzText • $bitrateKbps kbps"
+}
 
 data class VisualizerSnapshot(
     val waveform: FloatArray = FloatArray(64),
@@ -248,22 +301,6 @@ enum class VisualizerMode(val label: String) {
     val displayName: String get() = label
 }
 
-/**
- * Ambient Sound Mixer Layers (Part 6 – Ambient Sound Mixer).
- */
-enum class AmbientLayerType(
-    val id: String,
-    val displayName: String,
-    val emoji: String,
-    val subtitle: String
-) {
-    RAIN("rain", "Rain", "🌧️", "Warm rooftop rainfall & soft window droplets"),
-    OCEAN("ocean", "Ocean", "🌊", "Rhythmic Pacific surf waves & coastal foam"),
-    WIND("wind", "Wind", "🍃", "Gentle mountain breeze & whispering pines"),
-    NIGHT_AMBIENCE("night", "Night Ambience", "🌙", "Summer evening crickets & calm midnight air"),
-    BIRDS("birds", "Birds", "🐦", "Dawn forest birdsong & peaceful canopy chirps"),
-    THUNDERSTORM("thunder", "Thunderstorm", "⛈️", "Distant rolling thunder & steady rain")
-}
 
 @Immutable
 data class AiMoodRecommendation(
@@ -1118,10 +1155,10 @@ data class MusicMoodAnalysisResult(
 // =========================================================================
 
 enum class ConverterCategory(val displayName: String, val badge: String) {
-    LOFI("Lo-Fi", "5 Presets"),
+    LOFI("Lo-Fi", "4 Presets"),
     PHONK("Phonk", "4 Presets"),
     BASS("Bass", "5 Presets"),
-    OTHER_STYLES("Other Styles", "8 Presets")
+    OTHER_STYLES("Other Audio Effects", "8 Presets")
 }
 
 @Immutable
@@ -1200,7 +1237,7 @@ object BuiltInConverterPresets {
         ALL.filter { it.category == category }
 
     val ALL: List<MusicConverterPreset> = listOf(
-        // ---------------- LO-FI (5) ----------------
+        // ---------------- LO-FI (4) ----------------
         MusicConverterPreset(
             id = "conv_classic_lofi",
             name = "Classic Lo-Fi",
@@ -1247,31 +1284,6 @@ object BuiltInConverterPresets {
             )
         ),
         MusicConverterPreset(
-            id = "conv_rainy_lofi",
-            name = "Rainy Lo-Fi",
-            category = ConverterCategory.LOFI,
-            subtitle = "Cozy midnight room reflections, dark 5.8kHz filter & rain atmosphere",
-            dspMethodDescription = "5.8kHz LPF + Schroeder Room Reverb (26%) + Stereo Vinyl Canopy (16%)",
-            dspParameters = LofiDspParameters(
-                isLiveLofiEnabled = true,
-                soundMode = LiveSoundMode.LIVE_LOFI,
-                presetId = "conv_rainy_lofi",
-                presetName = "Rainy Lo-Fi",
-                masterIntensity = 0.82f,
-                lowPassCutoffHz = 5800f,
-                highPassCutoffHz = 35f,
-                analogSaturation = 0.20f,
-                vinylCrackle = 0.15f,
-                vinylNoise = 0.16f,
-                tapeHiss = 0.05f,
-                wowFlutterDepth = 0.11f,
-                warmBassBoostDb = 2.2f,
-                reverbMix = 0.26f,
-                reverbRoomSize = 0.72f,
-                stereoWidth = 1.15f
-            )
-        ),
-        MusicConverterPreset(
             id = "conv_dreamy_lofi",
             name = "Dreamy Lo-Fi",
             category = ConverterCategory.LOFI,
@@ -1294,7 +1306,7 @@ object BuiltInConverterPresets {
         ),
         MusicConverterPreset(
             id = "conv_vinyl_lofi",
-            name = "Vinyl Lo-Fi",
+            name = "Vinyl-style Lo-Fi",
             category = ConverterCategory.LOFI,
             subtitle = "Authentic 33⅓ RPM turntable platter swish, needle crackle & phono warmth",
             dspMethodDescription = "6.6kHz Phono Curve + 33.3 RPM Pink Groove Noise (22%) + Resonant Needle Crackle",
@@ -1302,7 +1314,7 @@ object BuiltInConverterPresets {
                 isLiveLofiEnabled = true,
                 soundMode = LiveSoundMode.LIVE_LOFI,
                 presetId = "conv_vinyl_lofi",
-                presetName = "Vinyl Lo-Fi",
+                presetName = "Vinyl-style Lo-Fi",
                 masterIntensity = 0.84f,
                 lowPassCutoffHz = 6600f,
                 highPassCutoffHz = 45f,
@@ -1319,7 +1331,7 @@ object BuiltInConverterPresets {
         // ---------------- PHONK (4) ----------------
         MusicConverterPreset(
             id = "conv_drift_phonk",
-            name = "Drift Phonk Inspired",
+            name = "Drift Phonk",
             category = ConverterCategory.PHONK,
             subtitle = "Memphis tape grit, 850Hz cowbell transient focus, punchy 62Hz bass & saturation",
             dspMethodDescription = "Harmonic Waveshaping (58%) + 850Hz/1.6kHz Midrange Peaking + +4.5dB Low-End Punch + Bus Compression",
@@ -1327,7 +1339,7 @@ object BuiltInConverterPresets {
                 isLiveLofiEnabled = true,
                 soundMode = LiveSoundMode.BASS_BOOST,
                 presetId = "conv_drift_phonk",
-                presetName = "Drift Phonk Inspired",
+                presetName = "Drift Phonk",
                 masterIntensity = 0.88f,
                 lowPassCutoffHz = 9500f,
                 highPassCutoffHz = 36f,
@@ -1346,34 +1358,8 @@ object BuiltInConverterPresets {
             cowbellResonanceAmount = 0.45f
         ),
         MusicConverterPreset(
-            id = "conv_brazilian_phonk",
-            name = "Brazilian Phonk Inspired",
-            category = ConverterCategory.PHONK,
-            subtitle = "Aggressive rhythmic transient punch, clipped sub-bass & crisp upper-mid bite",
-            dspMethodDescription = "Hard-Knee Transient Clipper + 125Hz Kick Punch (+5.0dB) + 2kHz Bite + 12-Bit Crunch",
-            dspParameters = LofiDspParameters(
-                isLiveLofiEnabled = true,
-                soundMode = LiveSoundMode.BASS_BOOST,
-                presetId = "conv_brazilian_phonk",
-                presetName = "Brazilian Phonk Inspired",
-                masterIntensity = 0.90f,
-                lowPassCutoffHz = 11000f,
-                highPassCutoffHz = 42f,
-                bitDepth = 12.5f,
-                sampleRateDivisor = 1.35f,
-                analogSaturation = 0.65f,
-                softDistortion = 0.42f,
-                warmBassBoostDb = 5.0f,
-                midrangeGainDb = 4.0f,
-                softCompression = 0.55f,
-                playbackSpeed = 1.04f
-            ),
-            eqBandGainsDb = listOf(4.0f, 5.2f, 3.5f, -2.0f, 1.5f, 4.5f, 4.0f, 2.0f, 0.0f, -1.5f),
-            cowbellResonanceAmount = 0.55f
-        ),
-        MusicConverterPreset(
             id = "conv_dark_phonk",
-            name = "Dark Phonk Inspired",
+            name = "Dark Phonk",
             category = ConverterCategory.PHONK,
             subtitle = "Pitched-down underground cassette atmosphere, heavy sub-bass & dark filter",
             dspMethodDescription = "0.91x Tape Pitch/Speed + 4.8kHz Dark LPF + Sub-Harmonic Weight + Cassette Saturation",
@@ -1381,7 +1367,7 @@ object BuiltInConverterPresets {
                 isLiveLofiEnabled = true,
                 soundMode = LiveSoundMode.DEEP_BASS,
                 presetId = "conv_dark_phonk",
-                presetName = "Dark Phonk Inspired",
+                presetName = "Dark Phonk",
                 masterIntensity = 0.88f,
                 lowPassCutoffHz = 4800f,
                 highPassCutoffHz = 30f,
@@ -1402,7 +1388,7 @@ object BuiltInConverterPresets {
         ),
         MusicConverterPreset(
             id = "conv_aggressive_phonk",
-            name = "Aggressive Phonk Inspired",
+            name = "Aggressive Phonk",
             category = ConverterCategory.PHONK,
             subtitle = "High-drive analog overdrive, heavy 808 sub-shelf & sharp midrange presence",
             dspMethodDescription = "Overdrive Saturator (72%) + 11.5-Bit Decimation + +5.5dB Bass Shelf + True-Peak Limiter",
@@ -1410,7 +1396,7 @@ object BuiltInConverterPresets {
                 isLiveLofiEnabled = true,
                 soundMode = LiveSoundMode.BASS_BOOST,
                 presetId = "conv_aggressive_phonk",
-                presetName = "Aggressive Phonk Inspired",
+                presetName = "Aggressive Phonk",
                 masterIntensity = 0.92f,
                 lowPassCutoffHz = 10500f,
                 highPassCutoffHz = 38f,
@@ -1424,6 +1410,32 @@ object BuiltInConverterPresets {
             ),
             eqBandGainsDb = listOf(4.5f, 5.5f, 3.0f, -1.0f, 2.8f, 5.0f, 3.8f, 1.5f, -0.5f, -2.0f),
             cowbellResonanceAmount = 0.60f
+        ),
+        MusicConverterPreset(
+            id = "conv_brazilian_phonk",
+            name = "Brazilian Phonk",
+            category = ConverterCategory.PHONK,
+            subtitle = "Aggressive rhythmic transient punch, clipped sub-bass & crisp upper-mid bite",
+            dspMethodDescription = "Hard-Knee Transient Clipper + 125Hz Kick Punch (+5.0dB) + 2kHz Bite + 12-Bit Crunch",
+            dspParameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.BASS_BOOST,
+                presetId = "conv_brazilian_phonk",
+                presetName = "Brazilian Phonk",
+                masterIntensity = 0.90f,
+                lowPassCutoffHz = 11000f,
+                highPassCutoffHz = 42f,
+                bitDepth = 12.5f,
+                sampleRateDivisor = 1.35f,
+                analogSaturation = 0.65f,
+                softDistortion = 0.42f,
+                warmBassBoostDb = 5.0f,
+                midrangeGainDb = 4.0f,
+                softCompression = 0.55f,
+                playbackSpeed = 1.04f
+            ),
+            eqBandGainsDb = listOf(4.0f, 5.2f, 3.5f, -2.0f, 1.5f, 4.5f, 4.0f, 2.0f, 0.0f, -1.5f),
+            cowbellResonanceAmount = 0.55f
         ),
 
         // ---------------- BASS (5) ----------------
@@ -1600,7 +1612,7 @@ object BuiltInConverterPresets {
         ),
         MusicConverterPreset(
             id = "conv_3d_spatial",
-            name = "3D Spatial",
+            name = "3D Spatial Audio",
             category = ConverterCategory.OTHER_STYLES,
             subtitle = "Binaural spherical-head HRTF rendering with elevation & front/rear depth cues",
             dspMethodDescription = "Woodworth Spherical-Head ITD + Head-Shadow ILD + 7.2kHz Pinna Notch + Early Reflections",
@@ -1608,7 +1620,7 @@ object BuiltInConverterPresets {
                 isLiveLofiEnabled = true,
                 soundMode = LiveSoundMode.THREE_D_SPATIAL,
                 presetId = "conv_3d_spatial",
-                presetName = "3D Spatial",
+                presetName = "3D Spatial Audio",
                 masterIntensity = 0.90f,
                 lowPassCutoffHz = 17000f,
                 reverbMix = 0.18f,

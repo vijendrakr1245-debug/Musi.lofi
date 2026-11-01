@@ -2,29 +2,28 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Midnight Navy & Deep Purple Surfaces (Anime Lo-Fi Aesthetic)
-val DeepObsidian = Color(0xFF0A0D1C)       // Deep Midnight Navy
-val MidnightCharcoal = Color(0xFF111428)   // Soft Midnight Indigo
-val ElevatedCharcoal = Color(0xFF181B34)   // Deep Purple-Navy Card Surface
-val GlassSurface = Color(0xFF212546)       // Frosted Violet-Navy Surface
-val SubtleBorder = Color(0xFF2E335C)       // Soft Indigo Hairline Border
+// Deep AMOLED Black & Rich Midnight Purple Surfaces (Premium Anime Lo-Fi Aesthetic)
+val DeepObsidian = Color(0xFF04030A)       // Deep AMOLED Pitch Black-Violet
+val MidnightCharcoal = Color(0xFF0D091D)   // Rich Midnight Purple Navigation Surface
+val ElevatedCharcoal = Color(0xFF150F2E)   // Rich Midnight Purple Card Surface
+val GlassSurface = Color(0xFF201744)       // Frosted Neon Violet-Indigo Surface
+val SubtleBorder = Color(0xFF332666)       // Luminous Violet Hairline Border
 
-// Soft Violet & Celestial Blue Accents
-val ElectricPurple = Color(0xFF8B5CF6)       // Soft Anime Violet
-val ElectricPurpleBright = Color(0xFFA78BFA) // Luminous Lavender Glow
-val ElectricPurpleDeep = Color(0xFF4C1D95)   // Deep Twilight Violet
+// Neon Violet Glow & Electric Blue Highlights
+val ElectricPurple = Color(0xFFA855F7)       // Neon Violet Glow
+val ElectricPurpleBright = Color(0xFFC084FC) // Luminous Orchid-Violet Highlight
+val ElectricPurpleDeep = Color(0xFF581C87)   // Deep Royal Amethyst
 
-val NeonCyan = Color(0xFF60A5FA)             // Soft Sky Blue Accent
-val NeonBlue = Color(0xFF818CF8)             // Periwinkle Indigo Blue
-val NeonCyanDeep = Color(0xFF1E3A8A)         // Deep Midnight Blue
+val NeonCyan = Color(0xFF00E5FF)             // Electric Blue / Laser Cyan Highlight
+val NeonBlue = Color(0xFF38B6FF)             // Electric Celestial Blue
+val NeonCyanDeep = Color(0xFF0D3B66)         // Deep Electric Sapphire
 
-// Warm Sunset & Studio Indicators
-val AnalogAmber = Color(0xFFFBBF24)          // Warm Golden Sunset
-val VinylRose = Color(0xFFF472B6)            // Soft Anime Sakura Rose
-val StudioEmerald = Color(0xFF34D399)        // Soft Mint Emerald
+// Soft Magenta / Pink Accents & Studio Indicators
+val AnalogAmber = Color(0xFFFFB84D)          // Warm Golden Sunset Accent
+val VinylRose = Color(0xFFFF4D9D)            // Soft Neon Magenta / Sakura Pink Accent
+val StudioEmerald = Color(0xFF10F5A0)        // Crisp Cyber Mint Emerald
 
-// Elegant Typography Hierarchy
+// High-Contrast Readability Typography Hierarchy
 val TextPrimary = Color(0xFFF8FAFC)          // Crisp Starlight White
-val TextSecondary = Color(0xFFCBD5E1)        // Soft Lavender-Slate
-val TextMuted = Color(0xFF64748B)            // Muted Twilight Gray
-
+val TextSecondary = Color(0xFFD8D0F2)        // Soft Lavender-Silver
+val TextMuted = Color(0xFF8378B3)            // Muted Midnight Amethyst Gray

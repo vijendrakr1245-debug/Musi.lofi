@@ -31,7 +31,7 @@ import com.example.data.PlaylistEntity
 import com.example.data.PlaylistTrackCrossRef
 import com.example.data.UserPreferencesRepository
 import com.example.model.AiMoodRecommendation
-import com.example.model.AmbientLayerType
+import com.example.model.AudioPlaybackQuality
 import com.example.model.BuiltInConverterPresets
 import com.example.model.BuiltInLofiPresets
 import com.example.model.ConverterCategory
@@ -134,13 +134,12 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     private val _highQualityDecoding = MutableStateFlow(true)
     val highQualityDecoding: StateFlow<Boolean> = _highQualityDecoding.asStateFlow()
 
+    private val _audioPlaybackQuality = MutableStateFlow(AudioPlaybackQuality.HIGH_QUALITY)
+    val audioPlaybackQuality: StateFlow<AudioPlaybackQuality> = _audioPlaybackQuality.asStateFlow()
+
     // Visualizer Mode (Spectrum Bars, Waveform, Circular, 3D Audio Stage)
     private val _visualizerMode = MutableStateFlow(VisualizerMode.SPECTRUM_BARS)
     val visualizerMode: StateFlow<VisualizerMode> = _visualizerMode.asStateFlow()
-
-    // Ambient Sound Mixer (6 simultaneous stereo background soundscapes)
-    val ambientLayerVolumes: StateFlow<Map<AmbientLayerType, Float>> =
-        AudioEngineBridge.ambientSoundEngine.layerVolumes
 
     // Music Style Converter & Export Engine State
     private val _selectedConverterCategory = MutableStateFlow(ConverterCategory.LOFI)
@@ -344,9 +343,11 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
             _accentTheme.value = savedPrefs.accentTheme
             _pureAmoledBlack.value = savedPrefs.pureAmoledBlack
             _highQualityDecoding.value = savedPrefs.highQualityDecoding
+            _audioPlaybackQuality.value = savedPrefs.audioPlaybackQuality
             _dspParams.value = savedPrefs.dspParams
             _eqState.value = savedPrefs.eqState
 
+            AudioEngineBridge.applyAudioPlaybackQuality(savedPrefs.audioPlaybackQuality)
             AudioEngineBridge.applyLofiParameters(savedPrefs.dspParams)
             AudioEngineBridge.applyEqualizerState(savedPrefs.eqState)
 
@@ -435,7 +436,13 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
                 folderName = t.folderName,
                 dateAddedMillis = t.dateAddedMillis,
                 albumArtUri = t.albumArtUri,
-                lyricsOrNotes = t.lyricsOrNotes
+                lyricsOrNotes = t.lyricsOrNotes,
+                genre = t.genre,
+                sampleRateHz = t.sampleRateHz,
+                bitrateKbps = t.bitrateKbps,
+                trackNumber = t.trackNumber,
+                channelCount = t.channelCount,
+                bitsPerSample = t.bitsPerSample
             )
         }
 
@@ -857,19 +864,6 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     }
 
     // =========================================================================
-    // AMBIENT SOUND MIXER (6 SIMULTANEOUS SOUNDSCAPES)
-    // =========================================================================
-
-    fun setAmbientLayerVolume(layer: AmbientLayerType, volume: Float) {
-        AudioEngineBridge.ambientSoundEngine.setLayerVolume(layer, volume)
-    }
-
-    fun stopAllAmbientSounds() {
-        AudioEngineBridge.ambientSoundEngine.stopAll()
-        postBannerMessage("Stopped all background ambient sound layers")
-    }
-
-    // =========================================================================
     // MUSIC STYLE CONVERTER STUDIO & BACKGROUND WAV EXPORT ENGINE
     // =========================================================================
 
@@ -983,7 +977,13 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
                             folderName = "Converted Songs",
                             dateAddedMillis = exportedTrack.dateAddedMillis,
                             albumArtUri = exportedTrack.albumArtUri,
-                            lyricsOrNotes = exportedTrack.lyricsOrNotes
+                            lyricsOrNotes = exportedTrack.lyricsOrNotes,
+                            genre = exportedTrack.genre,
+                            sampleRateHz = exportedTrack.sampleRateHz,
+                            bitrateKbps = exportedTrack.bitrateKbps,
+                            trackNumber = exportedTrack.trackNumber,
+                            channelCount = exportedTrack.channelCount,
+                            bitsPerSample = exportedTrack.bitsPerSample
                         )
                     )
                 )
@@ -1055,12 +1055,24 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
                     name = clean,
                     gainsCsv = current.bandGainsDb.joinToString(","),
                     bassBoostDb = current.bassBoostDb,
+                    midrangeBoostDb = current.midrangeBoostDb,
                     trebleBoostDb = current.trebleBoostDb
                 )
             )
             updateEqualizer { it.copy(presetName = clean) }
             postBannerMessage("Saved custom EQ preset '$clean'")
         }
+    }
+
+    /**
+     * Applies an Advanced Bass Enhancement preset (Deep Bass, Punchy Bass, Sub Bass, Bass Boost)
+     * with anti-clipping headroom compensation so low-end stays tight and vocals stay clear.
+     */
+    fun applyQuickBassEnhancementPreset(presetId: String) {
+        val bassPreset = BuiltInConverterPresets.byCategory(ConverterCategory.BASS)
+            .firstOrNull { it.id == presetId } ?: return
+        selectConverterPreset(bassPreset, applyLivePreview = true)
+        postBannerMessage("Bass Enhancement: ${bassPreset.name} — ${bassPreset.subtitle}")
     }
 
     // =========================================================================
@@ -1413,6 +1425,16 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefsRepo.saveThemePreferences(theme, pureAmoled, highQualityDecoding)
         }
+    }
+
+    fun setAudioPlaybackQuality(quality: AudioPlaybackQuality) {
+        _audioPlaybackQuality.value = quality
+        _highQualityDecoding.value = quality != AudioPlaybackQuality.ORIGINAL_QUALITY
+        AudioEngineBridge.applyAudioPlaybackQuality(quality)
+        viewModelScope.launch {
+            prefsRepo.saveAudioPlaybackQuality(quality)
+        }
+        postBannerMessage("Audio Playback Quality: ${quality.title}")
     }
 
     fun postBannerMessage(msg: String?) {

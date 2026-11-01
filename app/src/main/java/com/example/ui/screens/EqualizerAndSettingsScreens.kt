@@ -62,7 +62,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.CustomEqPresetEntity
+import com.example.model.AudioPlaybackQuality
 import com.example.model.EqualizerState
+import com.example.model.TrackItem
 import com.example.ui.theme.AccentTheme
 import com.example.ui.theme.AnalogAmber
 import com.example.ui.theme.DeepObsidian
@@ -82,7 +84,8 @@ fun EqualizerScreen(
     onUpdateEq: ((EqualizerState) -> EqualizerState) -> Unit,
     onUpdateBand: (Int, Float) -> Unit,
     onSelectBuiltInPreset: (String, List<Float>) -> Unit,
-    onSaveCustomEqPreset: (String) -> Unit
+    onSaveCustomEqPreset: (String) -> Unit,
+    onApplyBassEnhancementPreset: (String) -> Unit = {}
 ) {
     var showSaveDialog by remember { mutableStateOf(false) }
     var presetNameInput by remember { mutableStateOf("") }
@@ -276,7 +279,16 @@ fun EqualizerScreen(
                             onClick = {
                                 val parsed = custom.gainsCsv.split(",").mapNotNull { it.toFloatOrNull() }
                                 if (parsed.size == 10) {
-                                    onSelectBuiltInPreset(custom.name, parsed)
+                                    onUpdateEq {
+                                        it.copy(
+                                            isEnabled = true,
+                                            presetName = custom.name,
+                                            bandGainsDb = parsed,
+                                            bassBoostDb = custom.bassBoostDb,
+                                            midrangeBoostDb = custom.midrangeBoostDb,
+                                            trebleBoostDb = custom.trebleBoostDb
+                                        )
+                                    }
                                 }
                             },
                             label = { Text("★ ${custom.name}", style = MaterialTheme.typography.labelSmall) }
@@ -286,13 +298,53 @@ fun EqualizerScreen(
             }
         }
 
-        // 10-Band Individual Frequency Controls
+        // 5-Band or 10-Band Mode Toggle + Individual Frequency Controls
         item {
             StudioRackSection(
-                title = "10-BAND GRAPHIC FREQUENCY SLIDERS (-12dB TO +12dB)",
-                subtitle = "Real-time biquad peaking filters applied across 31Hz – 16kHz"
+                title = if (eqState.isFiveBandMode) {
+                    "5-BAND GRAPHIC FREQUENCY SLIDERS (-12dB TO +12dB)"
+                } else {
+                    "10-BAND GRAPHIC FREQUENCY SLIDERS (-12dB TO +12dB)"
+                },
+                subtitle = "Switch between 5-Band Quick EQ and 10-Band Studio Precision"
             ) {
-                for (i in 0 until 10) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    FilterChip(
+                        selected = !eqState.isFiveBandMode,
+                        onClick = { onUpdateEq { it.copy(isFiveBandMode = false) } },
+                        label = { Text("10-Band Studio (31Hz–16kHz)", style = MaterialTheme.typography.labelSmall) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = ElectricPurple.copy(alpha = 0.28f),
+                            selectedLabelColor = NeonCyan
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("eq_mode_10band_chip")
+                    )
+                    FilterChip(
+                        selected = eqState.isFiveBandMode,
+                        onClick = { onUpdateEq { it.copy(isFiveBandMode = true) } },
+                        label = { Text("5-Band Quick (62Hz–16kHz)", style = MaterialTheme.typography.labelSmall) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = ElectricPurple.copy(alpha = 0.28f),
+                            selectedLabelColor = NeonCyan
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("eq_mode_5band_chip")
+                    )
+                }
+
+                val activeIndices = if (eqState.isFiveBandMode) {
+                    EqualizerState.FIVE_BAND_INDICES
+                } else {
+                    (0 until 10).toList()
+                }
+
+                for (i in activeIndices) {
                     val freqLabel = EqualizerState.BAND_LABELS[i]
                     val gain = eqState.bandGainsDb.getOrElse(i) { 0f }
                     DspParameterSlider(
@@ -302,20 +354,37 @@ fun EqualizerScreen(
                         valueRange = -12f..12f,
                         accentColor = if (i < 3) ElectricPurple else if (i < 7) NeonCyan else AnalogAmber,
                         testTag = "eq_band_slider_$i",
-                        onValueChange = { newGain -> onUpdateBand(i, newGain) }
+                        onValueChange = { newGain ->
+                            if (eqState.isFiveBandMode) {
+                                val updatedBands = eqState.bandGainsDb.toMutableList()
+                                val clamped = newGain.coerceIn(-12f, 12f)
+                                updatedBands[i] = clamped
+                                if (i - 1 >= 0) {
+                                    updatedBands[i - 1] = ((updatedBands[i - 1] + clamped) * 0.5f).coerceIn(-12f, 12f)
+                                }
+                                onUpdateEq {
+                                    it.copy(
+                                        presetName = "Custom Curve",
+                                        bandGainsDb = updatedBands
+                                    )
+                                }
+                            } else {
+                                onUpdateBand(i, newGain)
+                            }
+                        }
                     )
                 }
             }
         }
 
-        // Bass, Treble & Stereo Balance
+        // Bass, Midrange, Treble & Stereo Balance
         item {
             StudioRackSection(
-                title = "BASS, TREBLE & STEREO BALANCE",
-                subtitle = "Master low/high shelf reinforcement and Left/Right channel pan"
+                title = "BASS, MIDRANGE, TREBLE & STEREO BALANCE",
+                subtitle = "Dedicated Low, Vocal Midrange, High-Air & Left/Right Channel Pan"
             ) {
                 DspParameterSlider(
-                    label = "Bass Control",
+                    label = "Bass Control (Sub & Warm Punch)",
                     valueText = String.format(Locale.US, "%+.1f dB", eqState.bassBoostDb),
                     value = eqState.bassBoostDb,
                     valueRange = -12f..12f,
@@ -324,7 +393,16 @@ fun EqualizerScreen(
                     onValueChange = { v -> onUpdateEq { it.copy(bassBoostDb = v) } }
                 )
                 DspParameterSlider(
-                    label = "Treble Control",
+                    label = "Midrange Control (Vocal Presence & Clarity)",
+                    valueText = String.format(Locale.US, "%+.1f dB", eqState.midrangeBoostDb),
+                    value = eqState.midrangeBoostDb,
+                    valueRange = -12f..12f,
+                    accentColor = StudioEmerald,
+                    testTag = "eq_midrange_slider",
+                    onValueChange = { v -> onUpdateEq { it.copy(midrangeBoostDb = v) } }
+                )
+                DspParameterSlider(
+                    label = "Treble Control (Crisp Air & Detail)",
                     valueText = String.format(Locale.US, "%+.1f dB", eqState.trebleBoostDb),
                     value = eqState.trebleBoostDb,
                     valueRange = -12f..12f,
@@ -341,10 +419,59 @@ fun EqualizerScreen(
                     },
                     value = eqState.stereoBalance,
                     valueRange = -1f..1f,
-                    accentColor = StudioEmerald,
+                    accentColor = AnalogAmber,
                     testTag = "eq_balance_slider",
                     onValueChange = { v -> onUpdateEq { it.copy(stereoBalance = v) } }
                 )
+            }
+        }
+
+        // Advanced Bass Enhancement Quick-Select
+        item {
+            StudioRackSection(
+                title = "ADVANCED BASS ENHANCEMENT",
+                subtitle = "Clean, powerful low-end presets with automatic headroom & vocal protection"
+            ) {
+                val bassEnhancements = listOf(
+                    Triple("conv_deep_bass", "Deep Bass", "Warm 55Hz sub-shelf with clean vocal separation"),
+                    Triple("conv_punchy_bass", "Punchy Bass", "Tight 90Hz kick transient punch without boominess"),
+                    Triple("conv_sub_bass", "Sub Bass", "Focused 32–64Hz cinema sub-bass extension"),
+                    Triple("conv_bass_boost", "Bass Boost", "Balanced analog low-end lift (+4.5 dB)")
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    bassEnhancements.chunked(2).forEach { rowItems ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            rowItems.forEach { (presetId, title, desc) ->
+                                Surface(
+                                    color = DeepObsidian,
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .border(1.dp, ElectricPurple.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+                                        .clickable { onApplyBassEnhancementPreset(presetId) }
+                                        .testTag("bass_preset_$presetId")
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text(
+                                            text = title,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = NeonCyan
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = desc,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -378,20 +505,11 @@ fun EqualizerScreen(
 }
 
 @Composable
-fun SettingsScreen(
+fun ThemesScreen(
     accentTheme: AccentTheme,
     pureAmoledBlack: Boolean,
     highQualityDecoding: Boolean,
-    sleepTimerRemainingSec: Int?,
-    onUpdateThemePrefs: (AccentTheme, Boolean, Boolean) -> Unit,
-    onSetSleepTimerMinutes: (Int) -> Unit,
-    onImportSongsClick: () -> Unit,
-    onImportFolderClick: () -> Unit,
-    onScanDeviceClick: () -> Unit,
-    onClearHistory: () -> Unit,
-    onOpenStudio: () -> Unit = {},
-    onOpenEqualizer: () -> Unit = {},
-    onOpenMusicConverter: () -> Unit = {}
+    onUpdateThemePrefs: (AccentTheme, Boolean, Boolean) -> Unit
 ) {
     var previewedTheme by remember(accentTheme) { mutableStateOf(accentTheme) }
 
@@ -401,83 +519,48 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
-            .testTag("settings_screen")
+            .testTag("themes_screen")
     ) {
         item {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "SETTINGS & 12 STUDIO THEMES",
+                text = "THEMES GALLERY",
                 style = MaterialTheme.typography.headlineLarge,
                 color = TextPrimary
             )
             Text(
-                text = "12 Anime & Minimal Visual Themes, Audio Tools, Sleep Timer & Library",
+                text = "12 Complete Anime & Minimal Visual Identities • Saved Automatically",
                 style = MaterialTheme.typography.bodySmall,
                 color = NeonCyan
             )
         }
 
-        // Quick Access to Advanced Audio Tools (Lo-Fi Studio, Music Converter & 10-Band Equalizer)
-        item {
-            StudioRackSection(
-                title = "ADVANCED AUDIO STUDIO & CONVERTER TOOLS",
-                subtitle = "Fine-tune real-time Lo-Fi DSP parameters, 10-band EQ, or convert & export songs"
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Button(
-                        onClick = onOpenStudio,
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricPurple),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("settings_open_studio_button")
-                    ) {
-                        Text("Lo-Fi Studio", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Button(
-                        onClick = onOpenMusicConverter,
-                        colors = ButtonDefaults.buttonColors(containerColor = StudioEmerald),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("settings_open_converter_button")
-                    ) {
-                        Text("Converter", style = MaterialTheme.typography.labelSmall, color = DeepObsidian)
-                    }
-                    OutlinedButton(
-                        onClick = onOpenEqualizer,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("settings_open_equalizer_button")
-                    ) {
-                        Text("10-Band EQ", style = MaterialTheme.typography.labelSmall, color = NeonCyan)
-                    }
-                }
-            }
-        }
-
-        // PART 1: 12 COMPLETE PREMIUM THEMES WITH LIVE PREVIEW & APPLY BUTTON
         item {
             StudioRackSection(
                 title = "12 COMPLETE PREMIUM THEMES",
-                subtitle = "Preview wallpaper gradients, color palettes & player styling — persisted automatically"
+                subtitle = "Select any theme to immediately update the entire app appearance"
             ) {
                 // Live Interactive Theme Preview Banner
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
+                        .clip(RoundedCornerShape(20.dp))
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(previewedTheme.wallpaperTop, previewedTheme.wallpaperBottom)
                             )
                         )
-                        .border(1.5.dp, previewedTheme.primary, RoundedCornerShape(18.dp))
+                        .border(
+                            width = 1.5.dp,
+                            brush = Brush.horizontalGradient(
+                                listOf(previewedTheme.primary, previewedTheme.secondary, previewedTheme.tertiary)
+                            ),
+                            shape = RoundedCornerShape(20.dp)
+                        )
                         .padding(16.dp)
                         .testTag("theme_live_preview_card")
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -485,7 +568,7 @@ fun SettingsScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "THEME PREVIEW: ${previewedTheme.label.uppercase()}",
+                                    text = "LIVE THEME PREVIEW: ${previewedTheme.label.uppercase()}",
                                     style = MaterialTheme.typography.labelLarge,
                                     color = previewedTheme.secondary
                                 )
@@ -510,40 +593,40 @@ fun SettingsScreen(
                             }
                         }
 
-                        // Simulated mini player styling preview bar
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(14.dp))
                                 .background(previewedTheme.cardBg)
+                                .border(1.dp, previewedTheme.primary.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
                                 .padding(horizontal = 12.dp, vertical = 10.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(
                                     modifier = Modifier
-                                        .size(16.dp)
+                                        .size(18.dp)
                                         .clip(CircleShape)
                                         .background(previewedTheme.primary)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Box(
                                     modifier = Modifier
-                                        .size(16.dp)
+                                        .size(18.dp)
                                         .clip(CircleShape)
                                         .background(previewedTheme.secondary)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Box(
                                     modifier = Modifier
-                                        .size(16.dp)
+                                        .size(18.dp)
                                         .clip(CircleShape)
                                         .background(previewedTheme.tertiary)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = if (previewedTheme == accentTheme) "Currently Applied Theme" else "Tap Apply to Activate",
+                                    text = if (previewedTheme == accentTheme) "Selected Theme ✓" else "Tap Apply to Activate",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = TextPrimary
                                 )
@@ -559,7 +642,7 @@ fun SettingsScreen(
                                 modifier = Modifier.testTag("apply_previewed_theme_button")
                             ) {
                                 Text(
-                                    text = if (previewedTheme == accentTheme) "Applied ✓" else "Apply Theme",
+                                    text = if (previewedTheme == accentTheme) "Active ✓" else "Apply Theme",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White
                                 )
@@ -568,26 +651,27 @@ fun SettingsScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // All 12 Complete Themes List
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     for (theme in AccentTheme.PRIMARY_TWELVE) {
                         val isApplied = theme == accentTheme
                         val isPreviewed = theme == previewedTheme
                         Surface(
-                            color = if (isApplied) theme.primary.copy(alpha = 0.22f) else theme.surfaceBg,
-                            shape = RoundedCornerShape(14.dp),
+                            color = if (isApplied) theme.primary.copy(alpha = 0.24f) else theme.surfaceBg,
+                            shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .border(
                                     width = if (isApplied || isPreviewed) 1.5.dp else 1.dp,
-                                    color = when {
-                                        isApplied -> theme.secondary
-                                        isPreviewed -> theme.primary
-                                        else -> SubtleBorder
+                                    brush = if (isApplied || isPreviewed) {
+                                        Brush.horizontalGradient(
+                                            listOf(theme.primary, theme.secondary, theme.tertiary)
+                                        )
+                                    } else {
+                                        Brush.horizontalGradient(listOf(SubtleBorder, SubtleBorder))
                                     },
-                                    shape = RoundedCornerShape(14.dp)
+                                    shape = RoundedCornerShape(16.dp)
                                 )
                                 .clickable {
                                     previewedTheme = theme
@@ -605,25 +689,38 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    // Wallpaper & Palette Swatch
                                     Box(
                                         contentAlignment = Alignment.Center,
                                         modifier = Modifier
-                                            .size(38.dp)
-                                            .clip(RoundedCornerShape(10.dp))
+                                            .size(46.dp)
+                                            .clip(RoundedCornerShape(12.dp))
                                             .background(
                                                 Brush.linearGradient(
-                                                    listOf(theme.wallpaperTop, theme.primary, theme.secondary)
+                                                    listOf(theme.wallpaperTop, theme.wallpaperBottom, theme.primary)
                                                 )
                                             )
-                                            .border(1.dp, theme.secondary.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                                            .border(1.dp, theme.secondary.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(12.dp)
-                                                .clip(CircleShape)
-                                                .background(theme.tertiary)
-                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(theme.primary)
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(theme.secondary)
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(theme.tertiary)
+                                            )
+                                        }
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
@@ -664,7 +761,7 @@ fun SettingsScreen(
                                         modifier = Modifier.height(30.dp)
                                     ) {
                                         Text(
-                                            text = if (isApplied) "Active" else "Apply",
+                                            text = if (isApplied) "Active ✓" else "Apply",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (isApplied) DeepObsidian else Color.White
                                         )
@@ -676,7 +773,7 @@ fun SettingsScreen(
                 }
 
                 ToggleSettingRow(
-                    title = "Pure AMOLED Deep Obsidian Black (#000000)",
+                    title = "Pure AMOLED Deep Black (#000000)",
                     subtitle = "Maximum contrast for dark rooms and night listening",
                     checked = pureAmoledBlack,
                     onCheckedChange = { amoled ->
@@ -685,8 +782,245 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+}
 
-        // Sleep Timer
+@Composable
+fun SettingsScreen(
+    accentTheme: AccentTheme,
+    pureAmoledBlack: Boolean,
+    highQualityDecoding: Boolean,
+    sleepTimerRemainingSec: Int?,
+    eqState: EqualizerState = EqualizerState(),
+    audioPlaybackQuality: AudioPlaybackQuality = AudioPlaybackQuality.HIGH_QUALITY,
+    currentTrack: TrackItem? = null,
+    onSelectAudioPlaybackQuality: (AudioPlaybackQuality) -> Unit = {},
+    onUpdateEq: ((EqualizerState) -> EqualizerState) -> Unit = {},
+    onUpdateThemePrefs: (AccentTheme, Boolean, Boolean) -> Unit,
+    onSetSleepTimerMinutes: (Int) -> Unit,
+    onImportSongsClick: () -> Unit,
+    onImportFolderClick: () -> Unit,
+    onScanDeviceClick: () -> Unit,
+    onClearHistory: () -> Unit,
+    onOpenStudio: () -> Unit = {},
+    onOpenEqualizer: () -> Unit = {},
+    onOpenMusicConverter: () -> Unit = {},
+    onOpenThemes: () -> Unit = {}
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(bottom = 115.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .testTag("settings_screen")
+    ) {
+        item {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "SETTINGS",
+                style = MaterialTheme.typography.headlineLarge,
+                color = TextPrimary
+            )
+            Text(
+                text = "Audio Quality • Equalizer • Background Playback • Sleep Timer • Themes • Appearance",
+                style = MaterialTheme.typography.bodySmall,
+                color = NeonCyan
+            )
+        }
+
+        // 1. AUDIO QUALITY
+        item {
+            StudioRackSection(
+                title = "AUDIO QUALITY",
+                subtitle = "Honest playback quality options & real-time 64-bit internal DSP precision"
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AudioPlaybackQuality.entries.forEach { option ->
+                        val isSelected = audioPlaybackQuality == option
+                        Surface(
+                            color = if (isSelected) ElectricPurple.copy(alpha = 0.22f) else DeepObsidian,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) NeonCyan else SubtleBorder,
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .clickable { onSelectAudioPlaybackQuality(option) }
+                                .testTag("playback_quality_${option.name.lowercase()}")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.padding(12.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = option.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = if (isSelected) NeonCyan else TextPrimary
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = option.subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(if (isSelected) StudioEmerald else ElevatedCharcoal)
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = if (isSelected) "Active ✓" else "Select",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSelected) DeepObsidian else TextSecondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Honest Current Track Technical Stream Readout
+                Surface(
+                    color = DeepObsidian,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, SubtleBorder, RoundedCornerShape(14.dp))
+                        .testTag("settings_audio_stream_info")
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Text(
+                            text = "CURRENT TRACK SOURCE STREAM (VERIFIED METADATA)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeonCyan
+                        )
+                        if (currentTrack != null) {
+                            Text(
+                                text = "${currentTrack.title} — ${currentTrack.artist}",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Format: ${currentTrack.formatBadge} • Sample Rate: ${currentTrack.sampleRateKhzText} (${currentTrack.sampleRateHz} Hz) • Bitrate: ${currentTrack.bitrateKbps} kbps • Channels: ${if (currentTrack.channelCount == 1) "Mono" else "Stereo"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StudioEmerald
+                            )
+                        } else {
+                            Text(
+                                text = "Supported Formats: MP3, WAV, FLAC, AAC, M4A, OGG (8kHz–192kHz, 16/24/32-bit PCM)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StudioEmerald
+                            )
+                        }
+                        Text(
+                            text = "Transparency Note: LOFI WAVE preserves the native fidelity of your audio files without unnecessary re-compression. Compressed files (such as MP3/AAC/OGG) are decoded cleanly with 64-bit DSP headroom, without falsely claiming lossy files become lossless.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
+        }
+
+        // 2. EQUALIZER & STUDIO TOOLS
+        item {
+            StudioRackSection(
+                title = "EQUALIZER & AUDIO STUDIO",
+                subtitle = "Active EQ Preset: ${eqState.presetName} • 10-Band Parametric Equalizer"
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Button(
+                        onClick = onOpenEqualizer,
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricPurple),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("settings_open_equalizer_button")
+                    ) {
+                        Text("Open 10-Band EQ", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Button(
+                        onClick = onOpenMusicConverter,
+                        colors = ButtonDefaults.buttonColors(containerColor = StudioEmerald),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("settings_open_converter_button")
+                    ) {
+                        Text("Music Studio", style = MaterialTheme.typography.labelSmall, color = DeepObsidian)
+                    }
+                    OutlinedButton(
+                        onClick = onOpenStudio,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("settings_open_studio_button")
+                    ) {
+                        Text("DSP Rack", style = MaterialTheme.typography.labelSmall, color = NeonCyan)
+                    }
+                }
+            }
+        }
+
+        // 3. PLAYBACK SETTINGS
+        item {
+            StudioRackSection(
+                title = "PLAYBACK SETTINGS",
+                subtitle = "Loudness normalization, crossfades & gapless transitions"
+            ) {
+                ToggleSettingRow(
+                    title = "Volume Normalization",
+                    subtitle = "Maintain consistent loudness across songs and presets",
+                    checked = eqState.volumeNormalization,
+                    onCheckedChange = { enabled ->
+                        onUpdateEq { it.copy(volumeNormalization = enabled) }
+                    }
+                )
+                ToggleSettingRow(
+                    title = "Smooth Track Transitions",
+                    subtitle = "Gentle micro-fade when switching tracks or seeking",
+                    checked = eqState.smoothTransitions,
+                    onCheckedChange = { enabled ->
+                        onUpdateEq { it.copy(smoothTransitions = enabled) }
+                    }
+                )
+                ToggleSettingRow(
+                    title = "Gapless Playback",
+                    subtitle = "Eliminate silence between consecutive album tracks",
+                    checked = eqState.gaplessPlayback,
+                    onCheckedChange = { enabled ->
+                        onUpdateEq { it.copy(gaplessPlayback = enabled) }
+                    }
+                )
+            }
+        }
+
+        // 4. BACKGROUND PLAYBACK
+        item {
+            StudioRackSection(
+                title = "BACKGROUND PLAYBACK",
+                subtitle = "Native Media3 ExoPlayer + Foreground MediaSessionService"
+            ) {
+                Text(
+                    text = "• Active: Music continues playing smoothly when the screen is locked or while using other apps.\n• Lock-screen & notification media controls (Play, Pause, Previous, Next, Seek) are automatically synced.\n• Automatic Audio Focus & Bluetooth headphone disconnect pause enabled.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+        }
+
+        // 5. SLEEP TIMER
         item {
             StudioRackSection(
                 title = "SLEEP TIMER",
@@ -712,33 +1046,42 @@ fun SettingsScreen(
             }
         }
 
-        // Audio Quality & Background Playback Info
+        // 6. THEME SELECTION & APP APPEARANCE
         item {
             StudioRackSection(
-                title = "AUDIO ENGINE & BACKGROUND SERVICE",
-                subtitle = "Native Media3 ExoPlayer + MediaSessionService architecture"
+                title = "THEME SELECTION & APP APPEARANCE",
+                subtitle = "Active Theme: ${accentTheme.label} (${accentTheme.playerStyleBadge})"
             ) {
+                Button(
+                    onClick = onOpenThemes,
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricPurple),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_open_themes_button")
+                ) {
+                    Text(
+                        text = "Open All 12 Premium Themes (${accentTheme.label} Active ✓)",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White
+                    )
+                }
+
                 ToggleSettingRow(
-                    title = "High-Precision 16-Bit Stereo PCM Pipeline",
-                    subtitle = "Zero-latency real-time biquad filtering, reverb & vinyl synthesis",
-                    checked = highQualityDecoding,
-                    onCheckedChange = { hq ->
-                        onUpdateThemePrefs(accentTheme, pureAmoledBlack, hq)
+                    title = "Pure AMOLED Deep Obsidian Black (#000000)",
+                    subtitle = "Maximum contrast for dark rooms and night listening",
+                    checked = pureAmoledBlack,
+                    onCheckedChange = { amoled ->
+                        onUpdateThemePrefs(accentTheme, amoled, highQualityDecoding)
                     }
-                )
-                Text(
-                    text = "• Foreground MediaSessionService keeps music playing when minimized, in other apps, or with screen locked.\n• Automatic Audio Focus & Bluetooth headset disconnect handling enabled.\n• Original device music files are never modified or overwritten.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
                 )
             }
         }
 
-        // Storage & Permission Management
+        // 7. STORAGE & PERMISSIONS
         item {
             StudioRackSection(
-                title = "STORAGE & PERSISTENT URI PERMISSIONS",
-                subtitle = "Manage device music access via Android SAF and MediaStore"
+                title = "MUSIC LIBRARY & STORAGE ACCESS",
+                subtitle = "Import local songs or folders with persistent URI permissions"
             ) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -777,6 +1120,20 @@ fun SettingsScreen(
                         Text("Clear History", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                     }
                 }
+            }
+        }
+
+        // 8. ABOUT LOFI WAVE
+        item {
+            StudioRackSection(
+                title = "ABOUT LOFI WAVE",
+                subtitle = "Version 3.0 • Premium Anime Lo-Fi Player & Real-Time Audio Transformation Studio"
+            ) {
+                Text(
+                    text = "LOFI WAVE combines an AMOLED Anime Lo-Fi visual experience with a real-time 64-bit DSP audio engine, 10-band equalizer, Binaural HRTF 3D Spatial & 8D Audio, on-device AI Music Mood Detection, and permanent offline WAV conversion.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
             }
         }
     }

@@ -5,6 +5,7 @@ import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
+import com.example.model.AudioPlaybackQuality
 import com.example.model.EqualizerState
 import com.example.model.LiveSoundMode
 import com.example.model.LofiDspParameters
@@ -61,6 +62,9 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
 
     @Volatile
     private var eqState: EqualizerState = EqualizerState()
+
+    @Volatile
+    private var playbackQuality: AudioPlaybackQuality = AudioPlaybackQuality.HIGH_QUALITY
 
     @Volatile
     private var coeffsDirty: Boolean = true
@@ -221,11 +225,25 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
         coeffsDirty = true
     }
 
+    fun updatePlaybackQuality(quality: AudioPlaybackQuality) {
+        playbackQuality = quality
+        coeffsDirty = true
+    }
+
     fun getCurrentParameters(): LofiDspParameters = lofiParams
     fun getCurrentEqualizerState(): EqualizerState = eqState
+    fun getPlaybackQuality(): AudioPlaybackQuality = playbackQuality
+
+    private var prevSatInputL = 0f
+    private var prevSatInputR = 0f
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
+        val enc = inputAudioFormat.encoding
+        val supportedEncoding = enc == C.ENCODING_PCM_16BIT ||
+            enc == C.ENCODING_PCM_24BIT ||
+            enc == C.ENCODING_PCM_32BIT ||
+            enc == C.ENCODING_PCM_FLOAT
+        if (!supportedEncoding) {
             return AudioProcessor.AudioFormat.NOT_SET
         }
         if (inputAudioFormat.channelCount != 1 && inputAudioFormat.channelCount != 2) {
@@ -240,7 +258,11 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
         }
         currentSlewedMasterGain = dbToLinear(lofiParams.masterGainDb.coerceIn(-24f, 12f))
         coeffsDirty = true
-        return inputAudioFormat
+        return AudioProcessor.AudioFormat(
+            inputAudioFormat.sampleRate,
+            inputAudioFormat.channelCount,
+            C.ENCODING_PCM_16BIT
+        )
     }
 
     private fun dbToLinear(db: Float): Float {
@@ -314,8 +336,17 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
             else -> bassGain
         }
         val midGain = p.midrangeGainDb.coerceIn(-12f, 12f)
-        val vocalMudDb = if (mode == LiveSoundMode.CLEAR_VOCAL) -2.4f else 0f
-        val vocalPresDb = if (mode == LiveSoundMode.CLEAR_VOCAL) 3.6f else 0f
+        val vocalMudDb = when (mode) {
+            LiveSoundMode.CLEAR_VOCAL -> -2.4f
+            LiveSoundMode.DEEP_BASS, LiveSoundMode.BASS_BOOST -> -1.2f // Keep low-mids clean when bass is boosted
+            else -> 0f
+        }
+        // Preserve clear vocals during Live Lo-Fi low-pass filtering as well as Clear Vocal mode
+        val vocalPresDb = when {
+            mode == LiveSoundMode.CLEAR_VOCAL -> 3.6f
+            mode == LiveSoundMode.LIVE_LOFI && p.lowPassCutoffHz < 7800f -> 1.25f
+            else -> 0f
+        }
 
         // Configure HRTF Pinna & Concha biquads based on elevation (-45° .. +60°)
         val elevNorm = ((p.spatialElevationDeg.coerceIn(-45f, 60f) + 45f) / 105f).coerceIn(0f, 1f)
@@ -340,8 +371,24 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
                 val freq = EqualizerState.BAND_FREQUENCIES[b].toFloat()
                 if (eq.isEnabled && freq < safeSr * 0.46f) {
                     var bandGain = if (b < bands.size) bands[b] else 0f
-                    if (b == 1) bandGain += eq.bassBoostDb * 0.5f
-                    if (b == 8) bandGain += eq.trebleBoostDb * 0.5f
+                    // Bass control reinforcement (31Hz, 62Hz, 125Hz)
+                    when (b) {
+                        0 -> bandGain += eq.bassBoostDb * 0.55f
+                        1 -> bandGain += eq.bassBoostDb * 0.75f
+                        2 -> bandGain += eq.bassBoostDb * 0.45f
+                    }
+                    // Midrange control reinforcement (500Hz, 1kHz, 2kHz)
+                    when (b) {
+                        4 -> bandGain += eq.midrangeBoostDb * 0.55f
+                        5 -> bandGain += eq.midrangeBoostDb * 0.80f
+                        6 -> bandGain += eq.midrangeBoostDb * 0.55f
+                    }
+                    // Treble control reinforcement (4kHz, 8kHz, 16kHz)
+                    when (b) {
+                        7 -> bandGain += eq.trebleBoostDb * 0.45f
+                        8 -> bandGain += eq.trebleBoostDb * 0.75f
+                        9 -> bandGain += eq.trebleBoostDb * 0.60f
+                    }
                     val clampedBandGain = bandGain.coerceIn(-12f, 12f)
                     if (ch == 0 && clampedBandGain > maxPositiveEqBoost) {
                         maxPositiveEqBoost = clampedBandGain
@@ -365,14 +412,61 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
         val remaining = inputBuffer.remaining()
         if (remaining == 0) return
 
-        val outputBuffer = replaceOutputBuffer(remaining)
-        processPcmBufferInternal(
-            inputBuffer = inputBuffer,
-            outputBuffer = outputBuffer,
-            sampleRate = inputAudioFormat.sampleRate.takeIf { it > 0 } ?: 44100,
-            channels = inputAudioFormat.channelCount.coerceIn(1, 2)
-        )
-        outputBuffer.flip()
+        val enc = inputAudioFormat.encoding
+        val sr = inputAudioFormat.sampleRate.takeIf { it > 0 } ?: 44100
+        val ch = inputAudioFormat.channelCount.coerceIn(1, 2)
+
+        if (enc == C.ENCODING_PCM_16BIT) {
+            val outputBuffer = replaceOutputBuffer(remaining)
+            processPcmBufferInternal(
+                inputBuffer = inputBuffer,
+                outputBuffer = outputBuffer,
+                sampleRate = sr,
+                channels = ch
+            )
+            outputBuffer.flip()
+        } else {
+            // Convert 24-bit, 32-bit, or 32-bit float PCM to 16-bit PCM buffer for unified 64-bit biquad DSP
+            val bytesPerSample = when (enc) {
+                C.ENCODING_PCM_24BIT -> 3
+                C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 4
+                else -> 2
+            }
+            val sampleCount = remaining / bytesPerSample
+            val pcm16Bytes = sampleCount * 2
+            val tempPcm16 = ByteBuffer.allocate(pcm16Bytes).order(ByteOrder.LITTLE_ENDIAN)
+            inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
+            for (s in 0 until sampleCount) {
+                val normalized = when (enc) {
+                    C.ENCODING_PCM_24BIT -> {
+                        val b0 = inputBuffer.get().toInt() and 0xFF
+                        val b1 = inputBuffer.get().toInt() and 0xFF
+                        val b2 = inputBuffer.get().toInt() // signed MSB
+                        val int24 = (b2 shl 16) or (b1 shl 8) or b0
+                        (int24 / 8388608.0f).coerceIn(-1f, 1f)
+                    }
+                    C.ENCODING_PCM_32BIT -> {
+                        val int32 = inputBuffer.int
+                        (int32 / 2147483648.0f).coerceIn(-1f, 1f)
+                    }
+                    C.ENCODING_PCM_FLOAT -> {
+                        val flt = inputBuffer.float
+                        if (flt.isNaN() || flt.isInfinite()) 0f else flt.coerceIn(-1f, 1f)
+                    }
+                    else -> 0f
+                }
+                tempPcm16.putShort((normalized * 32767.0f).roundToInt().coerceIn(-32768, 32767).toShort())
+            }
+            tempPcm16.flip()
+            val outputBuffer = replaceOutputBuffer(pcm16Bytes)
+            processPcmBufferInternal(
+                inputBuffer = tempPcm16,
+                outputBuffer = outputBuffer,
+                sampleRate = sr,
+                channels = ch
+            )
+            outputBuffer.flip()
+        }
     }
 
     /**
@@ -418,6 +512,7 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
 
         val p = lofiParams
         val eq = eqState
+        val qualityMode = playbackQuality
 
         // Smoothly slew Low-Pass cutoff across buffers
         val targetLpCutoff = p.lowPassCutoffHz.coerceIn(800f, 18000f)
@@ -616,9 +711,12 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
                     lofiR = midrangePeakFilters[1].process(lofiR)
                 }
 
-                if (mode == LiveSoundMode.CLEAR_VOCAL) {
+                if (mode == LiveSoundMode.CLEAR_VOCAL || mode == LiveSoundMode.DEEP_BASS || mode == LiveSoundMode.BASS_BOOST) {
                     lofiL = vocalMudCutFilters[0].process(lofiL)
                     lofiR = vocalMudCutFilters[1].process(lofiR)
+                }
+
+                if (mode == LiveSoundMode.CLEAR_VOCAL || (mode == LiveSoundMode.LIVE_LOFI && p.lowPassCutoffHz < 7800f)) {
                     lofiL = vocalPresenceFilters[0].process(lofiL)
                     lofiR = vocalPresenceFilters[1].process(lofiR)
                 }
@@ -628,8 +726,20 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
 
                 // STAGE C: Symmetric Warm Analog Tape Saturation (Zero DC Bias, Unity Gain Compensated)
                 if (satAmount > 0.005f) {
-                    lofiL = warmTapeSaturate(lofiL, satAmount)
-                    lofiR = warmTapeSaturate(lofiR, satAmount)
+                    if (qualityMode == AudioPlaybackQuality.MAXIMUM_AVAILABLE_QUALITY) {
+                        // 2x linear-oversampled analog tape saturation reduces harmonic aliasing
+                        val midSampleL = 0.5f * (prevSatInputL + lofiL)
+                        val midSampleR = 0.5f * (prevSatInputR + lofiR)
+                        prevSatInputL = lofiL
+                        prevSatInputR = lofiR
+                        lofiL = 0.5f * (warmTapeSaturate(midSampleL, satAmount) + warmTapeSaturate(lofiL, satAmount))
+                        lofiR = 0.5f * (warmTapeSaturate(midSampleR, satAmount) + warmTapeSaturate(lofiR, satAmount))
+                    } else {
+                        prevSatInputL = lofiL
+                        prevSatInputR = lofiR
+                        lofiL = warmTapeSaturate(lofiL, satAmount)
+                        lofiR = warmTapeSaturate(lofiR, satAmount)
+                    }
 
                     // Post-saturation DC blocker ensures strictly zero DC drift
                     val cleanL = lofiL - postSatDcPrevIn[0] + dcPoleR * postSatDcPrevOut[0]
