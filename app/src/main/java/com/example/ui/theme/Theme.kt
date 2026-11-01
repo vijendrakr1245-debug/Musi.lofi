@@ -9,18 +9,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 enum class AccentTheme(val label: String, val primary: Color, val secondary: Color) {
-    ELECTRIC_PURPLE("Electric Purple & Cyan", ElectricPurple, NeonCyan),
-    CYBER_BLUE("Neon Blue & Magenta", NeonBlue, Color(0xFFEC4899)),
-    WARM_TAPE("Warm Cassette Amber", AnalogAmber, ElectricPurpleBright),
-    MIDNIGHT_EMERALD("Midnight Emerald & Purple", StudioEmerald, ElectricPurple)
+    ELECTRIC_PURPLE("Soft Violet & Sky Blue", ElectricPurple, NeonCyan),
+    CYBER_BLUE("Celestial Blue & Sakura", NeonBlue, VinylRose),
+    WARM_TAPE("Sunset Amber & Lavender", AnalogAmber, ElectricPurpleBright),
+    MIDNIGHT_EMERALD("Mint Aurora & Violet", StudioEmerald, ElectricPurple)
 }
 
 val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp)
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(14.dp),
+    medium = RoundedCornerShape(20.dp),
+    large = RoundedCornerShape(26.dp),
+    extraLarge = RoundedCornerShape(34.dp)
 )
 
 @Composable
@@ -29,8 +29,8 @@ fun MyApplicationTheme(
     pureAmoledBlack: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val bg = if (pureAmoledBlack) DeepObsidian else Color(0xFF0E0C18)
-    val surface = if (pureAmoledBlack) MidnightCharcoal else Color(0xFF161326)
+    val bg = if (pureAmoledBlack) DeepObsidian else Color(0xFF0E1124)
+    val surface = if (pureAmoledBlack) MidnightCharcoal else Color(0xFF161932)
     val colorScheme = darkColorScheme(
         primary = accentTheme.primary,
         onPrimary = Color.White,
@@ -59,3 +59,4 @@ fun MyApplicationTheme(
         content = content
     )
 }
+

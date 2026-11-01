@@ -388,7 +388,9 @@ fun SettingsScreen(
     onImportSongsClick: () -> Unit,
     onImportFolderClick: () -> Unit,
     onScanDeviceClick: () -> Unit,
-    onClearHistory: () -> Unit
+    onClearHistory: () -> Unit,
+    onOpenStudio: () -> Unit = {},
+    onOpenEqualizer: () -> Unit = {}
 ) {
     LazyColumn(
         contentPadding = PaddingValues(bottom = 115.dp),
@@ -401,16 +403,48 @@ fun SettingsScreen(
         item {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "STUDIO SETTINGS",
+                text = "SETTINGS",
                 style = MaterialTheme.typography.headlineLarge,
                 color = TextPrimary
             )
             Text(
-                text = "Theme, Audio Engine, Sleep Timer & Storage Permissions",
+                text = "Theme, Audio Tools, Sleep Timer & Music Library",
                 style = MaterialTheme.typography.bodySmall,
                 color = NeonCyan
             )
         }
+
+        // Quick Access to Advanced Audio Tools (Lo-Fi Studio & 10-Band Equalizer)
+        item {
+            StudioRackSection(
+                title = "ADVANCED AUDIO TOOLS",
+                subtitle = "Fine-tune real-time Lo-Fi DSP parameters and 10-band studio EQ"
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Button(
+                        onClick = onOpenStudio,
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricPurple),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("settings_open_studio_button")
+                    ) {
+                        Text("Lo-Fi DSP Studio", style = MaterialTheme.typography.labelLarge)
+                    }
+                    OutlinedButton(
+                        onClick = onOpenEqualizer,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("settings_open_equalizer_button")
+                    ) {
+                        Text("10-Band Equalizer", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+                    }
+                }
+            }
+        }
+
 
         // Theme Settings
         item {

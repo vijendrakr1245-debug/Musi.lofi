@@ -98,6 +98,7 @@ import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricPurple
 import com.example.ui.theme.ElevatedCharcoal
 import com.example.ui.theme.GlassSurface
+import com.example.ui.theme.MidnightCharcoal
 import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.StudioEmerald
 import com.example.ui.theme.SubtleBorder
@@ -419,6 +420,135 @@ fun HifiLofiModeToggleBanner(
 }
 
 /**
+ * Sleek Two-State Segmented Control: ORIGINAL / LO-FI
+ * Connects directly to existing zero-restart Live Lo-Fi DSP toggle.
+ */
+@Composable
+fun OriginalLofiSegmentedControl(
+    isLofiEnabled: Boolean,
+    activePresetName: String,
+    onToggleMode: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    testTagPrefix: String = "mode_selector"
+) {
+    val originalBgAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (!isLofiEnabled) 1f else 0f,
+        animationSpec = tween(durationMillis = 240),
+        label = "orig_bg_alpha"
+    )
+    val lofiBgAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isLofiEnabled) 1f else 0f,
+        animationSpec = tween(durationMillis = 240),
+        label = "lofi_bg_alpha"
+    )
+
+    Surface(
+        color = MidnightCharcoal.copy(alpha = 0.92f),
+        shape = RoundedCornerShape(50),
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, SubtleBorder.copy(alpha = 0.85f), RoundedCornerShape(50))
+            .testTag("${testTagPrefix}_container")
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp)
+        ) {
+            // ORIGINAL state button
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(42.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                GlassSurface.copy(alpha = originalBgAlpha),
+                                ElevatedCharcoal.copy(alpha = originalBgAlpha)
+                            )
+                        )
+                    )
+                    .then(
+                        if (!isLofiEnabled) {
+                            Modifier.border(1.dp, NeonCyan.copy(alpha = 0.65f), RoundedCornerShape(50))
+                        } else Modifier
+                    )
+                    .clickable { onToggleMode(false) }
+                    .testTag("${testTagPrefix}_original")
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(if (!isLofiEnabled) NeonCyan else TextMuted.copy(alpha = 0.4f))
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "ORIGINAL",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (!isLofiEnabled) FontWeight.Bold else FontWeight.Medium,
+                        color = if (!isLofiEnabled) TextPrimary else TextMuted
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // LO-FI state button
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(42.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                ElectricPurple.copy(alpha = 0.85f * lofiBgAlpha),
+                                NeonCyan.copy(alpha = 0.75f * lofiBgAlpha)
+                            )
+                        )
+                    )
+                    .clickable { onToggleMode(true) }
+                    .testTag("${testTagPrefix}_lofi")
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = null,
+                        tint = if (isLofiEnabled) Color.White else TextMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isLofiEnabled && activePresetName.isNotBlank() && activePresetName != "Original") {
+                            "LO-FI • ${activePresetName.uppercase()}"
+                        } else {
+                            "LO-FI"
+                        },
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isLofiEnabled) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isLofiEnabled) Color.White else TextMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * Persistent Mini Player Bar displayed above the NavigationBar.
  */
 @Composable
@@ -439,35 +569,35 @@ fun MiniPlayerBar(
     } else 0f
 
     Surface(
-        color = ElevatedCharcoal.copy(alpha = 0.97f),
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        tonalElevation = 8.dp,
+        color = ElevatedCharcoal.copy(alpha = 0.96f),
+        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+        tonalElevation = 6.dp,
         modifier = modifier
             .fillMaxWidth()
             .border(
                 width = 1.dp,
-                color = SubtleBorder,
-                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+                color = SubtleBorder.copy(alpha = 0.75f),
+                shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
             )
             .clickable { onExpandNowPlaying() }
             .testTag("mini_player_bar")
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Thin progress bar
+            // Subtle progress bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(3.dp)
+                    .height(2.5.dp)
                     .background(DeepObsidian)
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(progress)
-                        .height(3.dp)
+                        .height(2.5.dp)
                         .background(
                             Brush.horizontalGradient(
                                 if (dspParams.isLiveLofiEnabled) listOf(ElectricPurple, NeonCyan)
-                                else listOf(StudioEmerald, NeonCyan)
+                                else listOf(NeonCyan, ElectricPurple)
                             )
                         )
                 )
@@ -477,16 +607,35 @@ fun MiniPlayerBar(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 14.dp, vertical = 9.dp)
             ) {
-                RotatingVinylArtwork(
-                    albumArtUri = track.albumArtUri,
-                    isPlaying = isPlaying,
-                    isLofiMode = dspParams.isLiveLofiEnabled,
-                    size = 46.dp
-                )
+                // Rounded Anime Album Art Thumbnail
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.dp, SubtleBorder, RoundedCornerShape(12.dp))
+                ) {
+                    if (!track.albumArtUri.isNullOrBlank()) {
+                        AsyncImage(
+                            model = Uri.parse(track.albumArtUri),
+                            contentDescription = "Mini Player Artwork",
+                            contentScale = ContentScale.Crop,
+                            error = painterResource(id = R.drawable.img_lofi_studio_banner),
+                            placeholder = painterResource(id = R.drawable.img_lofi_studio_banner),
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(id = R.drawable.img_lofi_studio_banner),
+                            contentDescription = "Mini Player Anime Artwork",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -498,27 +647,32 @@ fun MiniPlayerBar(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
+                                .clip(RoundedCornerShape(50))
                                 .background(
                                     if (dspParams.isLiveLofiEnabled) ElectricPurple.copy(alpha = 0.25f)
-                                    else StudioEmerald.copy(alpha = 0.25f)
+                                    else GlassSurface
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (dspParams.isLiveLofiEnabled) ElectricPurple else SubtleBorder,
+                                    shape = RoundedCornerShape(50)
                                 )
                                 .clickable { onToggleLofiMode(!dspParams.isLiveLofiEnabled) }
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
                                 .testTag("mini_player_mode_badge")
                         ) {
                             Text(
-                                text = if (dspParams.isLiveLofiEnabled) "LO-FI" else "HI-FI",
+                                text = if (dspParams.isLiveLofiEnabled) "LO-FI" else "ORIGINAL",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (dspParams.isLiveLofiEnabled) NeonCyan else StudioEmerald
+                                color = if (dspParams.isLiveLofiEnabled) NeonCyan else TextSecondary
                             )
                         }
                     }
                     Text(
-                        text = "${track.artist} • ${dspParams.presetName}",
+                        text = track.artist,
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary,
                         maxLines = 1,
@@ -554,8 +708,13 @@ fun MiniPlayerBar(
 }
 
 /**
- * Full-Screen Now Playing Screen with Rotating Vinyl, Real-Time Audio Visualizer,
- * Hi-Fi / Live Lo-Fi Switch, Playback Speed, Lyrics, Queue, and Sleep Timer.
+ * Immersive Full-Screen Player:
+ * - Large anime-inspired background artwork with soft midnight navy & deep purple gradient overlay
+ * - Crisp rounded anime centerpiece artwork with subtle playing scale transition
+ * - Song information & Favorite action
+ * - Two-state ORIGINAL / LO-FI toggle
+ * - Seek progress bar with timestamps
+ * - Shuffle, Previous, Large Glowing Play/Pause, Next, and Repeat controls
  */
 @Composable
 fun FullScreenNowPlayingOverlay(
@@ -586,30 +745,66 @@ fun FullScreenNowPlayingOverlay(
 ) {
     BackHandler(onBack = onClose)
 
-    // 0 = Player & Visualizer, 1 = Lyrics/Studio Notes, 2 = Queue, 3 = Sleep Timer & Speed
+    // 0 = Main Anime Artwork View, 1 = Lyrics, 2 = Queue, 3 = Speed & Sleep Timer
     var activeSubTab by remember { mutableIntStateOf(0) }
+
+    val artworkScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPlaying) 1.0f else 0.95f,
+        animationSpec = tween(durationMillis = 380),
+        label = "full_player_art_scale"
+    )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                         Color(0xFF1A102E),
-                        DeepObsidian,
-                        DeepObsidian
-                    )
-                )
-            )
-            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .background(DeepObsidian)
             .testTag("fullscreen_now_playing")
     ) {
+        // 1. Large Anime-Inspired Background Artwork Layer
+        if (!track.albumArtUri.isNullOrBlank()) {
+            AsyncImage(
+                model = Uri.parse(track.albumArtUri),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                error = painterResource(id = R.drawable.img_lofi_studio_banner),
+                placeholder = painterResource(id = R.drawable.img_lofi_studio_banner),
+                alpha = 0.34f,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Image(
+                painter = painterResource(id = R.drawable.img_lofi_studio_banner),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alpha = 0.36f,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        // 2. Soft Midnight Navy & Deep Purple Gradient Overlay
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            DeepObsidian.copy(alpha = 0.62f),
+                            Color(0xFF14122D).copy(alpha = 0.86f),
+                            DeepObsidian.copy(alpha = 0.97f),
+                            DeepObsidian
+                        )
+                    )
+                )
+        )
+
+        // 3. Foreground Player Content
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 10.dp)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(horizontal = 24.dp, vertical = 12.dp)
         ) {
-            // Top Header
+            // Minimal Top Header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -634,8 +829,12 @@ fun FullScreenNowPlayingOverlay(
                         color = NeonCyan
                     )
                     Text(
-                        text = "${track.formatBadge} • ${if (dspParams.isLiveLofiEnabled) "LIVE LO-FI DSP" else "HI-FI ORIGINAL"}",
-                        style = MaterialTheme.typography.labelSmall,
+                        text = if (dspParams.isLiveLofiEnabled) {
+                            "Lo-Fi Mood • ${dspParams.presetName}"
+                        } else {
+                            "Original Hi-Fi Audio"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary
                     )
                 }
@@ -655,55 +854,9 @@ fun FullScreenNowPlayingOverlay(
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Instant Hi-Fi / Live Lo-Fi Switch Banner
-            HifiLofiModeToggleBanner(
-                dspParams = dspParams,
-                onToggleMode = onToggleLofiMode,
-                onOpenStudio = {
-                    onClose()
-                    onOpenLofiStudio()
-                }
-            )
-
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Sub-view Switcher (Vinyl & Visualizer / Lyrics / Queue / Speed & Sleep)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                val tabs = listOf(
-                    Triple(0, "Vinyl & DSP", Icons.Default.Album),
-                    Triple(1, "Lyrics", Icons.Default.Lyrics),
-                    Triple(2, "Queue (${queue.size})", Icons.AutoMirrored.Filled.QueueMusic),
-                    Triple(3, "Speed/Timer", Icons.Default.Speed)
-                )
-                for ((idx, label, icon) in tabs) {
-                    FilterChip(
-                        selected = activeSubTab == idx,
-                        onClick = { activeSubTab = idx },
-                        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = label,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = ElectricPurple.copy(alpha = 0.28f),
-                            selectedLabelColor = TextPrimary
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Center Dynamic Content Area
+            // Centerpiece Area (Anime Artwork or Optional Lyrics / Queue / Timer Panel)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -712,51 +865,145 @@ fun FullScreenNowPlayingOverlay(
             ) {
                 when (activeSubTab) {
                     0 -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.SpaceEvenly,
-                            modifier = Modifier.fillMaxSize()
+                        // Large Rounded Anime Lo-Fi Centerpiece Artwork with Subtle Glow
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
                         ) {
-                            RotatingVinylArtwork(
-                                albumArtUri = track.albumArtUri,
-                                isPlaying = isPlaying,
-                                isLofiMode = dspParams.isLiveLofiEnabled,
-                                size = 210.dp
-                            )
+                            // Soft Violet & Blue radial glow behind artwork
+                            Canvas(modifier = Modifier.size(290.dp)) {
+                                drawCircle(
+                                    brush = Brush.radialGradient(
+                                        colors = listOf(
+                                            if (dspParams.isLiveLofiEnabled) {
+                                                ElectricPurple.copy(alpha = 0.34f)
+                                            } else {
+                                                NeonCyan.copy(alpha = 0.24f)
+                                            },
+                                            Color.Transparent
+                                        )
+                                    ),
+                                    radius = size.minDimension / 1.75f
+                                )
+                            }
 
-                            RealTimeAudioVisualizer(
-                                snapshot = visualizerSnapshot,
-                                isPlaying = isPlaying,
-                                isLofiMode = dspParams.isLiveLofiEnabled,
+                            Surface(
+                                shape = RoundedCornerShape(28.dp),
+                                color = ElevatedCharcoal,
+                                tonalElevation = 12.dp,
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(92.dp)
-                            )
+                                    .size((260 * artworkScale).dp)
+                                    .border(
+                                        width = 1.5.dp,
+                                        brush = Brush.linearGradient(
+                                            colors = if (dspParams.isLiveLofiEnabled) {
+                                                listOf(ElectricPurple, NeonCyan)
+                                            } else {
+                                                listOf(SubtleBorder, NeonCyan.copy(alpha = 0.6f))
+                                            }
+                                        ),
+                                        shape = RoundedCornerShape(28.dp)
+                                    )
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    if (!track.albumArtUri.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = Uri.parse(track.albumArtUri),
+                                            contentDescription = "Track Artwork",
+                                            contentScale = ContentScale.Crop,
+                                            error = painterResource(id = R.drawable.img_lofi_studio_banner),
+                                            placeholder = painterResource(id = R.drawable.img_lofi_studio_banner),
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Image(
+                                            painter = painterResource(id = R.drawable.img_lofi_studio_banner),
+                                            contentDescription = "Cinematic Anime Lo-Fi Artwork",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+
+                                    // Subtle bottom gradient inside artwork for mood badge
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    colors = listOf(
+                                                        Color.Transparent,
+                                                        Color.Transparent,
+                                                        DeepObsidian.copy(alpha = 0.72f)
+                                                    )
+                                                )
+                                            )
+                                    )
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .fillMaxWidth()
+                                            .padding(14.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(50))
+                                                .background(DeepObsidian.copy(alpha = 0.75f))
+                                                .border(
+                                                    1.dp,
+                                                    if (dspParams.isLiveLofiEnabled) ElectricPurple else NeonCyan,
+                                                    RoundedCornerShape(50)
+                                                )
+                                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = if (dspParams.isLiveLofiEnabled) {
+                                                    "LO-FI • ${dspParams.presetName}"
+                                                } else {
+                                                    "ORIGINAL HI-FI"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = TextPrimary
+                                            )
+                                        }
+
+                                        Text(
+                                            text = track.formatBadge,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = NeonCyan
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     1 -> {
                         Surface(
-                            color = ElevatedCharcoal,
-                            shape = RoundedCornerShape(18.dp),
+                            color = ElevatedCharcoal.copy(alpha = 0.9f),
+                            shape = RoundedCornerShape(22.dp),
                             modifier = Modifier
                                 .fillMaxSize()
-                                .border(1.dp, SubtleBorder, RoundedCornerShape(18.dp))
+                                .border(1.dp, SubtleBorder, RoundedCornerShape(22.dp))
                         ) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(16.dp)
+                                    .padding(18.dp)
                                     .verticalScroll(rememberScrollState())
                             ) {
                                 Text(
-                                    text = "SYNCED LYRICS & STUDIO DSP NOTES",
+                                    text = "LYRICS & TRACK NOTES",
                                     style = MaterialTheme.typography.labelLarge,
                                     color = NeonCyan
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Text(
                                     text = track.lyricsOrNotes.ifBlank {
-                                        "Playing ${track.title} by ${track.artist}.\nReal-time PCM audio processing is active."
+                                        "Playing ${track.title} by ${track.artist}.\nReal-time Lo-Fi audio engine ready."
                                     },
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = TextPrimary
@@ -766,11 +1013,11 @@ fun FullScreenNowPlayingOverlay(
                     }
                     2 -> {
                         Surface(
-                            color = ElevatedCharcoal,
-                            shape = RoundedCornerShape(18.dp),
+                            color = ElevatedCharcoal.copy(alpha = 0.9f),
+                            shape = RoundedCornerShape(22.dp),
                             modifier = Modifier
                                 .fillMaxSize()
-                                .border(1.dp, SubtleBorder, RoundedCornerShape(18.dp))
+                                .border(1.dp, SubtleBorder, RoundedCornerShape(22.dp))
                         ) {
                             LazyColumn(
                                 modifier = Modifier
@@ -783,7 +1030,7 @@ fun FullScreenNowPlayingOverlay(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
+                                            .clip(RoundedCornerShape(14.dp))
                                             .background(
                                                 if (isCurrent) ElectricPurple.copy(alpha = 0.22f)
                                                 else Color.Transparent
@@ -806,7 +1053,7 @@ fun FullScreenNowPlayingOverlay(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
-                                                text = "${qTrack.artist} • ${qTrack.formatBadge}",
+                                                text = qTrack.artist,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = TextSecondary,
                                                 maxLines = 1
@@ -824,11 +1071,11 @@ fun FullScreenNowPlayingOverlay(
                     }
                     3 -> {
                         Surface(
-                            color = ElevatedCharcoal,
-                            shape = RoundedCornerShape(18.dp),
+                            color = ElevatedCharcoal.copy(alpha = 0.9f),
+                            shape = RoundedCornerShape(22.dp),
                             modifier = Modifier
                                 .fillMaxSize()
-                                .border(1.dp, SubtleBorder, RoundedCornerShape(18.dp))
+                                .border(1.dp, SubtleBorder, RoundedCornerShape(22.dp))
                         ) {
                             Column(
                                 modifier = Modifier
@@ -838,7 +1085,7 @@ fun FullScreenNowPlayingOverlay(
                                 verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
                                 Text(
-                                    text = "PLAYBACK SPEED & TAPE PITCH (${String.format(Locale.US, "%.2fx", dspParams.playbackSpeed)})",
+                                    text = "PLAYBACK SPEED (${String.format(Locale.US, "%.2fx", dspParams.playbackSpeed)})",
                                     style = MaterialTheme.typography.labelLarge,
                                     color = NeonCyan
                                 )
@@ -855,7 +1102,7 @@ fun FullScreenNowPlayingOverlay(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    listOf(0.85f to "0.85x Slowed", 0.94f to "0.94x Lo-Fi", 1.0f to "1.0x Normal", 1.15f to "1.15x Nightcore").forEach { (spd, lbl) ->
+                                    listOf(0.85f to "0.85x", 0.94f to "0.94x", 1.0f to "1.0x", 1.15f to "1.15x").forEach { (spd, lbl) ->
                                         FilterChip(
                                             selected = kotlin.math.abs(dspParams.playbackSpeed - spd) < 0.02f,
                                             onClick = { onSpeedChange(spd) },
@@ -865,16 +1112,14 @@ fun FullScreenNowPlayingOverlay(
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(4.dp))
-
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Bedtime, contentDescription = null, tint = AnalogAmber)
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = if (sleepTimerRemainingSec != null) {
-                                            "SLEEP TIMER ACTIVE: ${sleepTimerRemainingSec / 60}m ${sleepTimerRemainingSec % 60}s"
+                                            "SLEEP TIMER: ${sleepTimerRemainingSec / 60}m ${sleepTimerRemainingSec % 60}s"
                                         } else {
-                                            "SLEEP TIMER (AUTO-PAUSE)"
+                                            "SLEEP TIMER"
                                         },
                                         style = MaterialTheme.typography.labelLarge,
                                         color = AnalogAmber
@@ -885,7 +1130,7 @@ fun FullScreenNowPlayingOverlay(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    listOf(0 to "Off", 5 to "5m", 15 to "15m", 30 to "30m", 60 to "60m").forEach { (mins, text) ->
+                                    listOf(0 to "Off", 15 to "15m", 30 to "30m", 60 to "60m").forEach { (mins, text) ->
                                         FilterChip(
                                             selected = (mins == 0 && sleepTimerRemainingSec == null),
                                             onClick = { onSetSleepTimerMinutes(mins) },
@@ -900,9 +1145,9 @@ fun FullScreenNowPlayingOverlay(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Track Metadata & Favorite Row
+            // Song Information & Favorite Action
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -915,6 +1160,7 @@ fun FullScreenNowPlayingOverlay(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "${track.artist} • ${track.album}",
                         style = MaterialTheme.typography.bodyMedium,
@@ -930,14 +1176,26 @@ fun FullScreenNowPlayingOverlay(
                 ) {
                     Icon(
                         imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = "Toggle Favorite",
+                        contentDescription = "Favorite",
                         tint = if (isFavorite) VinylRose else TextSecondary,
                         modifier = Modifier.size(28.dp)
                     )
                 }
             }
 
-            // Seek Bar & Timestamps
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Two-State ORIGINAL / LO-FI Toggle
+            OriginalLofiSegmentedControl(
+                isLofiEnabled = dspParams.isLiveLofiEnabled,
+                activePresetName = dspParams.presetName,
+                onToggleMode = onToggleLofiMode,
+                testTagPrefix = "full_player_mode"
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Seek Progress Bar with Timestamps
             val safeDuration = durationMs.coerceAtLeast(1L)
             Slider(
                 value = currentPositionMs.coerceIn(0L, safeDuration).toFloat(),
@@ -969,13 +1227,15 @@ fun FullScreenNowPlayingOverlay(
                 )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Main Transport Controls
+            // Main Playback Controls (Shuffle, Previous, Large Play/Pause, Next, Repeat)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                modifier = Modifier.fillMaxWidth()
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
             ) {
                 IconButton(
                     onClick = onToggleShuffle,
@@ -1005,7 +1265,7 @@ fun FullScreenNowPlayingOverlay(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(68.dp)
+                        .size(72.dp)
                         .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
@@ -1053,7 +1313,46 @@ fun FullScreenNowPlayingOverlay(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Subtle Minimal Bottom Pill Bar for Artwork / Lyrics / Queue / Sleep Timer
+            Row(
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val subViews = listOf(
+                    Triple(0, "Artwork", Icons.Default.Album),
+                    Triple(1, "Lyrics", Icons.Default.Lyrics),
+                    Triple(2, "Queue (${queue.size})", Icons.AutoMirrored.Filled.QueueMusic),
+                    Triple(3, "Timer", Icons.Default.Bedtime)
+                )
+                for ((idx, label, icon) in subViews) {
+                    val selected = activeSubTab == idx
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(if (selected) GlassSurface else Color.Transparent)
+                            .clickable { activeSubTab = idx }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = label,
+                            tint = if (selected) NeonCyan else TextMuted,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (selected) TextPrimary else TextMuted
+                        )
+                    }
+                }
+            }
         }
     }
 }
+

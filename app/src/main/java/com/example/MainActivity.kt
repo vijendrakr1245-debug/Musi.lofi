@@ -234,12 +234,18 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                         )
                     }
 
-                    // 6-Tab Bottom Navigation Bar
+                    // 4-Tab Minimal Bottom Navigation Bar (Home, Library, Playlists, Settings)
+                    val bottomNavTabs = listOf(
+                        LofiNavTab.HOME,
+                        LofiNavTab.LIBRARY,
+                        LofiNavTab.PLAYLISTS,
+                        LofiNavTab.SETTINGS
+                    )
                     NavigationBar(
                         containerColor = MidnightCharcoal,
-                        tonalElevation = 10.dp
+                        tonalElevation = 8.dp
                     ) {
-                        LofiNavTab.entries.forEach { tab ->
+                        bottomNavTabs.forEach { tab ->
                             val selected = currentTab == tab
                             NavigationBarItem(
                                 selected = selected,
@@ -253,7 +259,7 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 label = {
                                     Text(
                                         text = tab.label,
-                                        fontSize = 9.5.sp,
+                                        fontSize = 11.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -261,7 +267,7 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = NeonCyan,
                                     selectedTextColor = NeonCyan,
-                                    indicatorColor = ElectricPurple.copy(alpha = 0.28f),
+                                    indicatorColor = ElectricPurple.copy(alpha = 0.24f),
                                     unselectedIconColor = TextMuted,
                                     unselectedTextColor = TextMuted
                                 ),
@@ -277,108 +283,127 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                when (currentTab) {
-                    LofiNavTab.HOME -> {
-                        HomeScreen(
-                            allTracks = allTracks,
-                            favoriteIds = favoriteIds,
-                            history = history,
-                            presets = presets,
-                            dspParams = dspParams,
-                            currentTrack = currentTrack,
-                            isPlaying = isPlaying,
-                            onPlayTrack = { track -> viewModel.playTrack(track) },
-                            onToggleFavorite = { id -> viewModel.toggleFavorite(id) },
-                            onSelectPreset = { preset -> viewModel.selectLofiPreset(preset) },
-                            onToggleLofiMode = { enabled -> viewModel.setLiveLofiMode(enabled) },
-                            onApplyAiRecommendation = { rec -> viewModel.applyAiMoodRecommendation(rec) },
-                            onImportSongsClick = launchSafSongPicker,
-                            onScanDeviceClick = triggerMediaStoreScan,
-                            onNavigateToStudio = { currentTab = LofiNavTab.LOFI_STUDIO },
-                            onExpandNowPlaying = { isNowPlayingExpanded = true }
-                        )
-                    }
-                    LofiNavTab.LIBRARY -> {
-                        LibraryScreen(
-                            allTracks = allTracks,
-                            filteredTracks = filteredTracks,
-                            favoriteIds = favoriteIds,
-                            history = history,
-                            playlists = playlists,
-                            searchQuery = searchQuery,
-                            selectedTab = selectedLibraryTab,
-                            sortOrder = sortOrder,
-                            currentTrack = currentTrack,
-                            isPlaying = isPlaying,
-                            onSearchQueryChange = { q -> viewModel.setSearchQuery(q) },
-                            onSelectTab = { tab -> viewModel.setSelectedLibraryTab(tab) },
-                            onSelectSortOrder = { order -> viewModel.setSortOrder(order) },
-                            onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
-                            onPlayPlaylist = { list, shuffle, repeat -> viewModel.playPlaylist(list, shuffle, repeat) },
-                            onToggleFavorite = { id -> viewModel.toggleFavorite(id) },
-                            onAddTrackToMultiplePlaylists = { tId, plIds -> viewModel.addTrackToMultiplePlaylists(tId, plIds) },
-                            onCreatePlaylistWithTrack = { name, desc, ids -> viewModel.createPlaylist(name, desc, ids) },
-                            onRemoveTrackFromLibrary = { track -> viewModel.removeTrackFromLibrary(track) },
-                            onImportSongsClick = launchSafSongPicker,
-                            onImportFolderClick = launchSafFolderPicker,
-                            onScanDeviceClick = triggerMediaStoreScan
-                        )
-                    }
-                    LofiNavTab.PLAYLISTS -> {
-                        PlaylistsScreen(
-                            playlists = playlists,
-                            allTracks = allTracks,
-                            favoriteIds = favoriteIds,
-                            history = history,
-                            onCreatePlaylist = { name, desc, ids -> viewModel.createPlaylist(name, desc, ids) },
-                            onRenamePlaylist = { id, name, desc -> viewModel.renamePlaylist(id, name, desc) },
-                            onDeletePlaylist = { id -> viewModel.deletePlaylist(id) },
-                            onAddTrackToPlaylist = { plId, tId -> viewModel.addTrackToPlaylist(plId, tId) },
-                            onRemoveTrackFromPlaylist = { plId, tId -> viewModel.removeTrackFromPlaylist(plId, tId) },
-                            onReorderPlaylistTracks = { id, orderedIds -> viewModel.reorderPlaylistTracks(id, orderedIds) },
-                            onPlayPlaylist = { list, shuffle, repeat -> viewModel.playPlaylist(list, shuffle, repeat) },
-                            onPlaySingleTrackFromPlaylist = { track, list -> viewModel.playTrack(track, list) },
-                            onClearHistory = { viewModel.clearHistory() }
-                        )
-                    }
-                    LofiNavTab.LOFI_STUDIO -> {
-                        LofiStudioScreen(
-                            dspParams = dspParams,
-                            presets = presets,
-                            visualizerSnapshot = visualizerSnapshot,
-                            isPlaying = isPlaying,
-                            onToggleLofiMode = { enabled -> viewModel.setLiveLofiMode(enabled) },
-                            onSelectPreset = { preset -> viewModel.selectLofiPreset(preset) },
-                            onUpdateDsp = { transform -> viewModel.updateDspParameter(transform) },
-                            onSaveCustomPreset = { name, sub, cat -> viewModel.saveCurrentAsCustomPreset(name, sub, cat) },
-                            onDeleteCustomPreset = { id -> viewModel.deleteCustomLofiPreset(id) }
-                        )
-                    }
-                    LofiNavTab.EQUALIZER -> {
-                        EqualizerScreen(
-                            eqState = eqState,
-                            customEqPresets = customEqPresets,
-                            onUpdateEq = { transform -> viewModel.updateEqualizer(transform) },
-                            onUpdateBand = { idx, gain -> viewModel.updateEqBand(idx, gain) },
-                            onSelectBuiltInPreset = { name, gains -> viewModel.selectBuiltInEqPreset(name, gains) },
-                            onSaveCustomEqPreset = { name -> viewModel.saveCustomEqPreset(name) }
-                        )
-                    }
-                    LofiNavTab.SETTINGS -> {
-                        SettingsScreen(
-                            accentTheme = accentTheme,
-                            pureAmoledBlack = pureAmoled,
-                            highQualityDecoding = highQualityDecoding,
-                            sleepTimerRemainingSec = sleepTimerSec,
-                            onUpdateThemePrefs = { th, amoled, hq -> viewModel.updateThemePreferences(th, amoled, hq) },
-                            onSetSleepTimerMinutes = { mins -> viewModel.startSleepTimer(mins) },
-                            onImportSongsClick = launchSafSongPicker,
-                            onImportFolderClick = launchSafFolderPicker,
-                            onScanDeviceClick = triggerMediaStoreScan,
-                            onClearHistory = { viewModel.clearHistory() }
-                        )
+                androidx.compose.animation.Crossfade(
+                    targetState = currentTab,
+                    label = "screen_crossfade"
+                ) { activeTab ->
+                    when (activeTab) {
+                        LofiNavTab.HOME -> {
+                            HomeScreen(
+                                allTracks = allTracks,
+                                favoriteIds = favoriteIds,
+                                history = history,
+                                presets = presets,
+                                dspParams = dspParams,
+                                currentTrack = currentTrack,
+                                isPlaying = isPlaying,
+                                currentPositionMs = currentPosMs,
+                                durationMs = durationMs,
+                                onPlayTrack = { track -> viewModel.playTrack(track) },
+                                onTogglePlayPause = { viewModel.togglePlayPause() },
+                                onSkipPrevious = { viewModel.skipPrevious() },
+                                onSkipNext = { viewModel.skipNext() },
+                                onSeekTo = { pos -> viewModel.seekToPosition(pos) },
+                                onToggleFavorite = { id -> viewModel.toggleFavorite(id) },
+                                onSelectPreset = { preset -> viewModel.selectLofiPreset(preset) },
+                                onToggleLofiMode = { enabled -> viewModel.setLiveLofiMode(enabled) },
+                                onApplyAiRecommendation = { rec -> viewModel.applyAiMoodRecommendation(rec) },
+                                onImportSongsClick = launchSafSongPicker,
+                                onScanDeviceClick = triggerMediaStoreScan,
+                                onNavigateToStudio = { currentTab = LofiNavTab.LOFI_STUDIO },
+                                onOpenSettings = { currentTab = LofiNavTab.SETTINGS },
+                                onOpenLibraryCollection = { filterTab ->
+                                    viewModel.setSelectedLibraryTab(filterTab)
+                                    currentTab = LofiNavTab.LIBRARY
+                                },
+                                onExpandNowPlaying = { isNowPlayingExpanded = true }
+                            )
+                        }
+                        LofiNavTab.LIBRARY -> {
+                            LibraryScreen(
+                                allTracks = allTracks,
+                                filteredTracks = filteredTracks,
+                                favoriteIds = favoriteIds,
+                                history = history,
+                                playlists = playlists,
+                                searchQuery = searchQuery,
+                                selectedTab = selectedLibraryTab,
+                                sortOrder = sortOrder,
+                                currentTrack = currentTrack,
+                                isPlaying = isPlaying,
+                                onSearchQueryChange = { q -> viewModel.setSearchQuery(q) },
+                                onSelectTab = { tab -> viewModel.setSelectedLibraryTab(tab) },
+                                onSelectSortOrder = { order -> viewModel.setSortOrder(order) },
+                                onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
+                                onPlayPlaylist = { list, shuffle, repeat -> viewModel.playPlaylist(list, shuffle, repeat) },
+                                onToggleFavorite = { id -> viewModel.toggleFavorite(id) },
+                                onAddTrackToMultiplePlaylists = { tId, plIds -> viewModel.addTrackToMultiplePlaylists(tId, plIds) },
+                                onCreatePlaylistWithTrack = { name, desc, ids -> viewModel.createPlaylist(name, desc, ids) },
+                                onRemoveTrackFromLibrary = { track -> viewModel.removeTrackFromLibrary(track) },
+                                onImportSongsClick = launchSafSongPicker,
+                                onImportFolderClick = launchSafFolderPicker,
+                                onScanDeviceClick = triggerMediaStoreScan
+                            )
+                        }
+                        LofiNavTab.PLAYLISTS -> {
+                            PlaylistsScreen(
+                                playlists = playlists,
+                                allTracks = allTracks,
+                                favoriteIds = favoriteIds,
+                                history = history,
+                                onCreatePlaylist = { name, desc, ids -> viewModel.createPlaylist(name, desc, ids) },
+                                onRenamePlaylist = { id, name, desc -> viewModel.renamePlaylist(id, name, desc) },
+                                onDeletePlaylist = { id -> viewModel.deletePlaylist(id) },
+                                onAddTrackToPlaylist = { plId, tId -> viewModel.addTrackToPlaylist(plId, tId) },
+                                onRemoveTrackFromPlaylist = { plId, tId -> viewModel.removeTrackFromPlaylist(plId, tId) },
+                                onReorderPlaylistTracks = { id, orderedIds -> viewModel.reorderPlaylistTracks(id, orderedIds) },
+                                onPlayPlaylist = { list, shuffle, repeat -> viewModel.playPlaylist(list, shuffle, repeat) },
+                                onPlaySingleTrackFromPlaylist = { track, list -> viewModel.playTrack(track, list) },
+                                onClearHistory = { viewModel.clearHistory() }
+                            )
+                        }
+                        LofiNavTab.LOFI_STUDIO -> {
+                            LofiStudioScreen(
+                                dspParams = dspParams,
+                                presets = presets,
+                                visualizerSnapshot = visualizerSnapshot,
+                                isPlaying = isPlaying,
+                                onToggleLofiMode = { enabled -> viewModel.setLiveLofiMode(enabled) },
+                                onSelectPreset = { preset -> viewModel.selectLofiPreset(preset) },
+                                onUpdateDsp = { transform -> viewModel.updateDspParameter(transform) },
+                                onSaveCustomPreset = { name, sub, cat -> viewModel.saveCurrentAsCustomPreset(name, sub, cat) },
+                                onDeleteCustomPreset = { id -> viewModel.deleteCustomLofiPreset(id) }
+                            )
+                        }
+                        LofiNavTab.EQUALIZER -> {
+                            EqualizerScreen(
+                                eqState = eqState,
+                                customEqPresets = customEqPresets,
+                                onUpdateEq = { transform -> viewModel.updateEqualizer(transform) },
+                                onUpdateBand = { idx, gain -> viewModel.updateEqBand(idx, gain) },
+                                onSelectBuiltInPreset = { name, gains -> viewModel.selectBuiltInEqPreset(name, gains) },
+                                onSaveCustomEqPreset = { name -> viewModel.saveCustomEqPreset(name) }
+                            )
+                        }
+                        LofiNavTab.SETTINGS -> {
+                            SettingsScreen(
+                                accentTheme = accentTheme,
+                                pureAmoledBlack = pureAmoled,
+                                highQualityDecoding = highQualityDecoding,
+                                sleepTimerRemainingSec = sleepTimerSec,
+                                onUpdateThemePrefs = { th, amoled, hq -> viewModel.updateThemePreferences(th, amoled, hq) },
+                                onSetSleepTimerMinutes = { mins -> viewModel.startSleepTimer(mins) },
+                                onImportSongsClick = launchSafSongPicker,
+                                onImportFolderClick = launchSafFolderPicker,
+                                onScanDeviceClick = triggerMediaStoreScan,
+                                onClearHistory = { viewModel.clearHistory() },
+                                onOpenStudio = { currentTab = LofiNavTab.LOFI_STUDIO },
+                                onOpenEqualizer = { currentTab = LofiNavTab.EQUALIZER }
+                            )
+                        }
                     }
                 }
+
 
                 // Floating Status Toast Banner
                 AnimatedVisibility(
