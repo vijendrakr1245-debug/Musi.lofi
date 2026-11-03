@@ -85,6 +85,63 @@ enum class LiveSoundMode(
     )
 }
 
+/**
+ * Primary 4 Independent Audio Modes (Phase 7 — Independent Audio Modes):
+ * 1. NORMAL (Bit-transparent Original Stereo)
+ * 2. 8D AUDIO (True 360° Binaural HRTF Orbit Engine)
+ * 3. 3D SURROUND (Stationary Binaural Virtual Speaker & Decorrelated Surround Stage)
+ * 4. LOFI AUDIO (15-Stage Analog Tape, Vinyl & Room LoFi Engine)
+ */
+enum class PrimaryAudioMode(
+    val id: String,
+    val displayName: String,
+    val badge: String,
+    val liveSoundMode: LiveSoundMode
+) {
+    NORMAL("normal", "Normal", "HI-FI BYPASS", LiveSoundMode.ORIGINAL_STEREO),
+    EIGHT_D_AUDIO("8d_audio", "8D Audio", "360° BINAURAL", LiveSoundMode.EIGHT_D_ULTRA),
+    THREE_D_SURROUND("3d_surround", "3D Surround", "SURROUND STAGE", LiveSoundMode.THREE_D_SPATIAL),
+    LOFI_AUDIO("lofi_audio", "LoFi Audio", "15-STAGE LO-FI", LiveSoundMode.LIVE_LOFI);
+
+    companion object {
+        fun fromLiveSoundMode(mode: LiveSoundMode): PrimaryAudioMode {
+            return when (mode) {
+                LiveSoundMode.ORIGINAL_STEREO -> NORMAL
+                LiveSoundMode.EIGHT_D_ULTRA -> EIGHT_D_AUDIO
+                LiveSoundMode.THREE_D_SPATIAL,
+                LiveSoundMode.ULTRA_SURROUND -> THREE_D_SURROUND
+                else -> LOFI_AUDIO
+            }
+        }
+
+        fun fromDspParameters(params: LofiDspParameters): PrimaryAudioMode {
+            return when {
+                params.soundMode == LiveSoundMode.ORIGINAL_STEREO -> NORMAL
+                params.soundMode == LiveSoundMode.EIGHT_D_ULTRA -> EIGHT_D_AUDIO
+                params.soundMode == LiveSoundMode.THREE_D_SPATIAL ||
+                    params.soundMode == LiveSoundMode.ULTRA_SURROUND -> THREE_D_SURROUND
+                params.isLiveLofiEnabled && params.presetId != "original" -> LOFI_AUDIO
+                else -> NORMAL
+            }
+        }
+    }
+}
+
+/**
+ * Real-time headphone & audio output route telemetry (Phase 8 — Headphone & Device Compatibility).
+ */
+@Immutable
+data class HeadphoneRouteStatus(
+    val isHeadphonesConnected: Boolean = false,
+    val isBluetoothAudio: Boolean = false,
+    val isWiredHeadphones: Boolean = false,
+    val routeName: String = "Device Stereo Output",
+    val estimatedOutputLatencyMs: Float = 18.0f
+) {
+    val routeDisplayName: String get() = routeName
+    val estimatedBluetoothLatencyMs: Int get() = estimatedOutputLatencyMs.toInt()
+}
+
 @Immutable
 data class LofiDspParameters(
     val isLiveLofiEnabled: Boolean = true,
@@ -113,10 +170,17 @@ data class LofiDspParameters(
     val stereoWidth: Float = 1.05f,
     val spatialIntensity: Float = 0.70f,
     val eightDRotationSpeedHz: Float = 0.14f,
+    val eightDClockwise: Boolean = true,
+    val eightDPauseMovement: Boolean = false,
+    val eightDMovementDepth: Float = 0.68f,
     val spatialDistance: Float = 0.35f,
     val spatialAzimuthDeg: Float = 0.0f,
     val spatialElevationDeg: Float = 15.0f,
-    val spatialAutoOrbit: Boolean = true,
+    val spatialAutoOrbit: Boolean = false,
+    val surroundWidth: Float = 1.38f,
+    val surroundDepth: Float = 0.52f,
+    val surroundAmbience: Float = 0.34f,
+    val surroundCenterFocus: Float = 0.72f,
     val softCompression: Float = 0.10f,
     val highFreqReductionDb: Float = 1.0f,
     val trebleGainDb: Float = -0.5f,
@@ -184,7 +248,7 @@ data class LofiDspParameters(
                 LiveSoundMode.LIVE_LOFI -> {
                     val base = baseLofiPreset?.takeIf {
                         it.presetId != "original" && it.masterIntensity > 0.05f && it.lowPassCutoffHz < 12000f
-                    } ?: BuiltInLofiPresets.ALL.first { it.id == "soft_lofi" }.parameters
+                    } ?: BuiltInLofiPresets.ALL.first { it.id == "classic_lofi" }.parameters
                     base.copy(
                         isLiveLofiEnabled = true,
                         soundMode = LiveSoundMode.LIVE_LOFI,
@@ -207,14 +271,20 @@ data class LofiDspParameters(
                     vinylNoise = 0.0f,
                     tapeHiss = 0.0f,
                     wowFlutterDepth = 0.0f,
-                    warmBassBoostDb = 1.2f,
-                    reverbMix = 0.22f,
-                    reverbRoomSize = 0.72f,
-                    stereoWidth = 1.32f,
+                    warmBassBoostDb = 1.0f,
+                    reverbMix = 0.18f,
+                    reverbRoomSize = 0.68f,
+                    stereoWidth = 1.28f,
                     spatialIntensity = 0.88f,
-                    eightDRotationSpeedHz = 0.18f,
+                    eightDRotationSpeedHz = 0.16f,
+                    eightDClockwise = true,
+                    eightDPauseMovement = false,
+                    eightDMovementDepth = 0.68f,
+                    spatialDistance = 0.42f,
+                    spatialAzimuthDeg = 0.0f,
+                    spatialElevationDeg = 14.0f,
                     highFreqReductionDb = 0.0f,
-                    trebleGainDb = 0.5f,
+                    trebleGainDb = 0.4f,
                     playbackSpeed = 1.0f,
                     pitchSemitones = 0f,
                     masterGainDb = masterGainDb
@@ -224,7 +294,7 @@ data class LofiDspParameters(
                     isLiveLofiEnabled = false,
                     soundMode = LiveSoundMode.THREE_D_SPATIAL,
                     presetId = "mode_3d_spatial",
-                    presetName = "3D Spatial Audio",
+                    presetName = "3D Surround Sound",
                     masterIntensity = 0.90f,
                     lowPassCutoffHz = 18000f,
                     highPassCutoffHz = 24f,
@@ -234,15 +304,19 @@ data class LofiDspParameters(
                     tapeHiss = 0.0f,
                     wowFlutterDepth = 0.0f,
                     warmBassBoostDb = 0.8f,
-                    reverbMix = 0.18f,
-                    reverbRoomSize = 0.66f,
-                    stereoWidth = 1.24f,
-                    spatialIntensity = 0.90f,
-                    spatialDistance = 0.35f,
+                    reverbMix = 0.16f,
+                    reverbRoomSize = 0.64f,
+                    stereoWidth = 1.38f,
+                    spatialIntensity = 0.88f,
+                    spatialDistance = 0.52f,
                     spatialElevationDeg = 18.0f,
-                    spatialAutoOrbit = true,
+                    spatialAutoOrbit = false,
+                    surroundWidth = 1.38f,
+                    surroundDepth = 0.52f,
+                    surroundAmbience = 0.34f,
+                    surroundCenterFocus = 0.72f,
                     highFreqReductionDb = 0.0f,
-                    trebleGainDb = 0.8f,
+                    trebleGainDb = 0.6f,
                     playbackSpeed = 1.0f,
                     pitchSemitones = 0f,
                     masterGainDb = masterGainDb
@@ -253,7 +327,7 @@ data class LofiDspParameters(
                     soundMode = LiveSoundMode.ULTRA_SURROUND,
                     presetId = "mode_ultra_surround",
                     presetName = "Ultra Surround",
-                    masterIntensity = 0.86f,
+                    masterIntensity = 0.88f,
                     lowPassCutoffHz = 18000f,
                     highPassCutoffHz = 24f,
                     analogSaturation = 0.0f,
@@ -261,13 +335,17 @@ data class LofiDspParameters(
                     vinylNoise = 0.0f,
                     tapeHiss = 0.0f,
                     wowFlutterDepth = 0.0f,
-                    warmBassBoostDb = 1.4f,
+                    warmBassBoostDb = 1.2f,
                     reverbMix = 0.14f,
                     reverbRoomSize = 0.62f,
                     stereoWidth = 1.52f,
-                    spatialIntensity = 0.86f,
+                    spatialIntensity = 0.88f,
+                    surroundWidth = 1.52f,
+                    surroundDepth = 0.58f,
+                    surroundAmbience = 0.38f,
+                    surroundCenterFocus = 0.68f,
                     highFreqReductionDb = 0.0f,
-                    trebleGainDb = 1.0f,
+                    trebleGainDb = 0.8f,
                     playbackSpeed = 1.0f,
                     pitchSemitones = 0f,
                     masterGainDb = masterGainDb
@@ -452,9 +530,17 @@ data class EqualizerState(
     // 10 bands: 31Hz, 62Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz
     val bandGainsDb: List<Float> = listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
     val bassBoostDb: Float = 0.0f,
+    val subBassBoostDb: Float = 0.0f,
+    val bassHarmonicDrive: Float = 0.0f,
+    val lowFreqCompression: Float = 0.0f,
     val midrangeBoostDb: Float = 0.0f,
     val trebleBoostDb: Float = 0.0f,
     val stereoBalance: Float = 0.0f,
+    val masterStereoWidth: Float = 1.0f,
+    val preampGainDb: Float = 0.0f,
+    val dynamicRangeControl: Float = 0.0f,
+    val outputLimiterEnabled: Boolean = true,
+    val audioEnhancementEnabled: Boolean = true,
     val volumeNormalization: Boolean = true,
     val smoothTransitions: Boolean = true,
     val fadeInOutMs: Int = 250,
@@ -465,13 +551,31 @@ data class EqualizerState(
         val BAND_LABELS = listOf("31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k")
         val FIVE_BAND_INDICES = listOf(1, 3, 5, 7, 9) // 62Hz, 250Hz, 1kHz, 4kHz, 16kHz
 
+        val REQUIRED_TEN_EQ_PRESET_NAMES = listOf(
+            "Flat",
+            "Bass Boost",
+            "Deep Bass",
+            "Vocal",
+            "Acoustic",
+            "Classical",
+            "Jazz",
+            "Rock",
+            "Pop",
+            "Custom"
+        )
+
         val BUILT_IN_EQ_PRESETS: Map<String, List<Float>> = linkedMapOf(
+            "Flat" to listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
             "Flat Studio" to listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
-            "Rock" to listOf(4.2f, 3.4f, 1.6f, -0.8f, -1.5f, -0.6f, 1.4f, 2.8f, 3.6f, 3.8f),
-            "Pop" to listOf(-1.0f, 1.6f, 3.2f, 3.8f, 2.4f, 0.0f, -0.8f, 1.2f, 2.2f, 2.4f),
+            "Bass Boost" to listOf(4.8f, 4.2f, 2.8f, 1.0f, -0.4f, -0.4f, 0.4f, 1.0f, 1.4f, 1.2f),
+            "Deep Bass" to listOf(5.8f, 5.2f, 3.2f, 0.8f, -0.8f, -0.8f, 0.2f, 0.8f, 1.0f, 0.6f),
+            "Vocal" to listOf(-2.0f, -1.2f, -0.4f, 1.4f, 3.2f, 3.8f, 3.0f, 1.6f, 0.6f, 0.0f),
+            "Acoustic" to listOf(3.0f, 2.6f, 1.4f, 0.6f, 1.2f, 1.4f, 2.4f, 3.0f, 2.6f, 1.8f),
             "Classical" to listOf(3.2f, 2.6f, 1.8f, 0.6f, -0.6f, -0.6f, 0.0f, 1.6f, 2.6f, 3.2f),
             "Jazz" to listOf(2.8f, 2.2f, 1.0f, 1.6f, -1.2f, -1.2f, 0.0f, 1.4f, 2.4f, 2.8f),
-            "Vocal" to listOf(-2.0f, -1.2f, -0.4f, 1.4f, 3.2f, 3.8f, 3.0f, 1.6f, 0.6f, 0.0f),
+            "Rock" to listOf(4.2f, 3.4f, 1.6f, -0.8f, -1.5f, -0.6f, 1.4f, 2.8f, 3.6f, 3.8f),
+            "Pop" to listOf(-1.0f, 1.6f, 3.2f, 3.8f, 2.4f, 0.0f, -0.8f, 1.2f, 2.2f, 2.4f),
+            "Custom" to listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
             "Lo-Fi Warmth" to listOf(1.5f, 2.0f, 1.2f, 0.4f, 0.0f, -0.3f, -0.6f, -1.2f, -1.8f, -2.2f),
             "Deep Sub Bass" to listOf(3.0f, 2.8f, 1.8f, 0.5f, 0.0f, 0.0f, 0.2f, 0.5f, 0.5f, 0.0f),
             "Warm Cassette EQ" to listOf(-1.0f, 1.5f, 2.2f, 1.5f, 0.6f, 0.0f, -1.0f, -2.0f, -3.0f, -3.5f),
@@ -581,8 +685,23 @@ data class AiMoodRecommendation(
 )
 
 object BuiltInLofiPresets {
+    val REQUIRED_NINE_IDS: List<String> = listOf(
+        "classic_lofi",
+        "rainy_night",
+        "vinyl_vintage",
+        "deep_warm_bass",
+        "dreamy_lofi",
+        "chill_study",
+        "dark_lofi",
+        "soft_piano_lofi",
+        "relaxing_lofi"
+    )
+
+    val REQUIRED_NINE: List<LofiPreset>
+        get() = REQUIRED_NINE_IDS.mapNotNull { reqId -> ALL.find { it.id == reqId } }
+
     val ALL: List<LofiPreset> = listOf(
-        // 1. Original – no DSP effects (Pure Hi-Fi bypass)
+        // 0. Original – no DSP effects (Pure Hi-Fi bypass)
         LofiPreset(
             id = "original",
             name = "Original",
@@ -616,7 +735,344 @@ object BuiltInLofiPresets {
                 masterGainDb = 0.0f
             )
         ),
-        // 2. Soft Lo-Fi – clean and warm
+        // REQUIRED PRESET 1: Classic LoFi
+        LofiPreset(
+            id = "classic_lofi",
+            name = "Classic LoFi",
+            subtitle = "Authentic 6.8kHz warm tape roll-off, subtle capstan wow, vinyl dust & balanced room glue",
+            moodCategory = "Signature Lo-Fi",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "classic_lofi",
+                presetName = "Classic LoFi",
+                masterIntensity = 0.78f,
+                lowPassCutoffHz = 6800f,
+                highPassCutoffHz = 40f,
+                bitDepth = 15.0f,
+                sampleRateDivisor = 1.1f,
+                analogSaturation = 0.24f,
+                softDistortion = 0.04f,
+                vinylNoise = 0.12f,
+                vinylCrackle = 0.14f,
+                tapeHiss = 0.05f,
+                wowFlutterDepth = 0.14f,
+                wowFlutterRateHz = 1.05f,
+                softCompression = 0.15f,
+                warmBassBoostDb = 2.2f,
+                midrangeGainDb = 0.4f,
+                highFreqReductionDb = 1.8f,
+                trebleGainDb = -1.0f,
+                reverbMix = 0.16f,
+                reverbRoomSize = 0.60f,
+                echoMix = 0.08f,
+                echoDelayMs = 260f,
+                echoFeedback = 0.28f,
+                stereoWidth = 1.04f,
+                playbackSpeed = 1.0f,
+                masterGainDb = 0.0f
+            )
+        ),
+        // REQUIRED PRESET 2: Rainy Night
+        LofiPreset(
+            id = "rainy_night",
+            name = "Rainy Night",
+            subtitle = "Soft 5.8kHz atmospheric window reflections, warm electric piano tone & delicate vinyl air",
+            moodCategory = "Chill & Rainy",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "rainy_night",
+                presetName = "Rainy Night",
+                masterIntensity = 0.78f,
+                lowPassCutoffHz = 5800f,
+                highPassCutoffHz = 35f,
+                bitDepth = 16.0f,
+                sampleRateDivisor = 1.0f,
+                analogSaturation = 0.18f,
+                softDistortion = 0.02f,
+                vinylCrackle = 0.12f,
+                vinylNoise = 0.15f,
+                tapeHiss = 0.06f,
+                wowFlutterDepth = 0.11f,
+                wowFlutterRateHz = 0.92f,
+                warmBassBoostDb = 2.0f,
+                midrangeGainDb = 0.2f,
+                reverbMix = 0.28f,
+                reverbRoomSize = 0.72f,
+                echoMix = 0.12f,
+                echoDelayMs = 310f,
+                echoFeedback = 0.32f,
+                stereoWidth = 1.16f,
+                softCompression = 0.12f,
+                highFreqReductionDb = 2.2f,
+                trebleGainDb = -1.4f,
+                playbackSpeed = 1.0f,
+                masterGainDb = 0.0f
+            )
+        ),
+        // REQUIRED PRESET 3: Vinyl Vintage
+        LofiPreset(
+            id = "vinyl_vintage",
+            name = "Vinyl Vintage",
+            subtitle = "1970s 33⅓ RPM phono stage, 5.2kHz horn roll-off, rich needle crackle & warm tube harmonics",
+            moodCategory = "Nostalgic Analog",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "vinyl_vintage",
+                presetName = "Vinyl Vintage",
+                masterIntensity = 0.82f,
+                lowPassCutoffHz = 5200f,
+                highPassCutoffHz = 58f,
+                bitDepth = 14.0f,
+                sampleRateDivisor = 1.2f,
+                analogSaturation = 0.30f,
+                softDistortion = 0.06f,
+                vinylCrackle = 0.25f,
+                vinylNoise = 0.22f,
+                tapeHiss = 0.04f,
+                wowFlutterDepth = 0.18f,
+                wowFlutterRateHz = 1.22f,
+                warmBassBoostDb = 1.6f,
+                midrangeGainDb = 1.4f,
+                reverbMix = 0.10f,
+                reverbRoomSize = 0.50f,
+                echoMix = 0.04f,
+                echoDelayMs = 210f,
+                stereoWidth = 0.90f,
+                softCompression = 0.18f,
+                highFreqReductionDb = 2.5f,
+                trebleGainDb = -1.6f,
+                playbackSpeed = 1.0f,
+                masterGainDb = 0.0f
+            )
+        ),
+        // REQUIRED PRESET 4: Deep Warm Bass
+        LofiPreset(
+            id = "deep_warm_bass",
+            name = "Deep Warm Bass",
+            subtitle = "Rich +4.6dB analog low-shelf foundation, tape head-bump saturation & silky 6.1kHz top end",
+            moodCategory = "Warm Low-End",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "deep_warm_bass",
+                presetName = "Deep Warm Bass",
+                masterIntensity = 0.80f,
+                lowPassCutoffHz = 6100f,
+                highPassCutoffHz = 24f,
+                bitDepth = 16.0f,
+                sampleRateDivisor = 1.0f,
+                analogSaturation = 0.28f,
+                softDistortion = 0.05f,
+                vinylCrackle = 0.06f,
+                vinylNoise = 0.07f,
+                tapeHiss = 0.03f,
+                wowFlutterDepth = 0.09f,
+                wowFlutterRateHz = 0.82f,
+                warmBassBoostDb = 4.6f,
+                midrangeGainDb = -0.5f,
+                reverbMix = 0.14f,
+                reverbRoomSize = 0.58f,
+                echoMix = 0.05f,
+                echoDelayMs = 280f,
+                stereoWidth = 1.08f,
+                softCompression = 0.22f,
+                highFreqReductionDb = 1.9f,
+                trebleGainDb = -1.2f,
+                playbackSpeed = 1.0f,
+                masterGainDb = 0.0f
+            )
+        ),
+        // REQUIRED PRESET 5: Dreamy LoFi
+        LofiPreset(
+            id = "dreamy_lofi",
+            name = "Dreamy LoFi",
+            subtitle = "Spacious 126% stereo stage, smooth velvet room reverb, tape echo & floating chorus drift",
+            moodCategory = "Dreamy & Ethereal",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "dreamy_lofi",
+                presetName = "Dreamy LoFi",
+                masterIntensity = 0.78f,
+                lowPassCutoffHz = 7600f,
+                highPassCutoffHz = 30f,
+                bitDepth = 16.0f,
+                sampleRateDivisor = 1.0f,
+                analogSaturation = 0.16f,
+                softDistortion = 0.01f,
+                vinylCrackle = 0.05f,
+                vinylNoise = 0.06f,
+                tapeHiss = 0.04f,
+                wowFlutterDepth = 0.20f,
+                wowFlutterRateHz = 0.88f,
+                warmBassBoostDb = 1.6f,
+                reverbMix = 0.32f,
+                reverbRoomSize = 0.78f,
+                echoMix = 0.18f,
+                echoDelayMs = 340f,
+                echoFeedback = 0.36f,
+                stereoWidth = 1.26f,
+                softCompression = 0.10f,
+                highFreqReductionDb = 1.4f,
+                trebleGainDb = -0.8f,
+                playbackSpeed = 1.0f,
+                masterGainDb = 0.0f
+            )
+        ),
+        // REQUIRED PRESET 6: Chill Study
+        LofiPreset(
+            id = "chill_study",
+            name = "Chill Study",
+            subtitle = "Fatigue-free 8.2kHz clarity, articulate vocal midrange, whisper vinyl & focus compression",
+            moodCategory = "Study & Reading",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "chill_study",
+                presetName = "Chill Study",
+                masterIntensity = 0.70f,
+                lowPassCutoffHz = 8200f,
+                highPassCutoffHz = 36f,
+                bitDepth = 16.0f,
+                sampleRateDivisor = 1.0f,
+                analogSaturation = 0.14f,
+                softDistortion = 0.0f,
+                vinylCrackle = 0.05f,
+                vinylNoise = 0.05f,
+                tapeHiss = 0.02f,
+                wowFlutterDepth = 0.06f,
+                wowFlutterRateHz = 0.90f,
+                warmBassBoostDb = 1.4f,
+                midrangeGainDb = 0.8f,
+                reverbMix = 0.14f,
+                reverbRoomSize = 0.56f,
+                echoMix = 0.0f,
+                stereoWidth = 1.05f,
+                softCompression = 0.14f,
+                highFreqReductionDb = 1.1f,
+                trebleGainDb = -0.6f,
+                playbackSpeed = 1.0f,
+                masterGainDb = 0.0f
+            )
+        ),
+        // REQUIRED PRESET 7: Dark LoFi
+        LofiPreset(
+            id = "dark_lofi",
+            name = "Dark LoFi",
+            subtitle = "Deep 4.1kHz nocturnal low-pass, 13.5-bit sampler grit, heavy sub-warmth & shadowy tape echo",
+            moodCategory = "Nocturnal & Dark",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "dark_lofi",
+                presetName = "Dark LoFi",
+                masterIntensity = 0.84f,
+                lowPassCutoffHz = 4100f,
+                highPassCutoffHz = 28f,
+                bitDepth = 13.5f,
+                sampleRateDivisor = 1.3f,
+                analogSaturation = 0.32f,
+                softDistortion = 0.08f,
+                vinylCrackle = 0.12f,
+                vinylNoise = 0.14f,
+                tapeHiss = 0.09f,
+                wowFlutterDepth = 0.17f,
+                wowFlutterRateHz = 0.78f,
+                warmBassBoostDb = 3.4f,
+                midrangeGainDb = -1.2f,
+                reverbMix = 0.24f,
+                reverbRoomSize = 0.74f,
+                echoMix = 0.10f,
+                echoDelayMs = 290f,
+                echoFeedback = 0.34f,
+                stereoWidth = 1.12f,
+                softCompression = 0.20f,
+                highFreqReductionDb = 3.2f,
+                trebleGainDb = -2.2f,
+                playbackSpeed = 1.0f,
+                masterGainDb = 0.0f
+            )
+        ),
+        // REQUIRED PRESET 8: Soft Piano LoFi
+        LofiPreset(
+            id = "soft_piano_lofi",
+            name = "Soft Piano LoFi",
+            subtitle = "Intimate felt-piano midrange warmth (+1.8dB), delicate tape flutter & wooden studio decay",
+            moodCategory = "Acoustic & Piano",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "soft_piano_lofi",
+                presetName = "Soft Piano LoFi",
+                masterIntensity = 0.76f,
+                lowPassCutoffHz = 6400f,
+                highPassCutoffHz = 42f,
+                bitDepth = 16.0f,
+                sampleRateDivisor = 1.0f,
+                analogSaturation = 0.17f,
+                softDistortion = 0.01f,
+                vinylCrackle = 0.08f,
+                vinylNoise = 0.07f,
+                tapeHiss = 0.05f,
+                wowFlutterDepth = 0.15f,
+                wowFlutterRateHz = 0.94f,
+                warmBassBoostDb = 1.5f,
+                midrangeGainDb = 1.8f,
+                reverbMix = 0.26f,
+                reverbRoomSize = 0.72f,
+                echoMix = 0.09f,
+                echoDelayMs = 240f,
+                echoFeedback = 0.26f,
+                stereoWidth = 1.14f,
+                softCompression = 0.16f,
+                highFreqReductionDb = 1.7f,
+                trebleGainDb = -1.1f,
+                playbackSpeed = 1.0f,
+                masterGainDb = 0.0f
+            )
+        ),
+        // REQUIRED PRESET 9: Relaxing LoFi
+        LofiPreset(
+            id = "relaxing_lofi",
+            name = "Relaxing LoFi",
+            subtitle = "Soothing 4.9kHz velvet filter, slow 0.72Hz drift, gentle room cushion & calm dynamics",
+            moodCategory = "Relax & Unwind",
+            parameters = LofiDspParameters(
+                isLiveLofiEnabled = true,
+                soundMode = LiveSoundMode.LIVE_LOFI,
+                presetId = "relaxing_lofi",
+                presetName = "Relaxing LoFi",
+                masterIntensity = 0.76f,
+                lowPassCutoffHz = 4900f,
+                highPassCutoffHz = 28f,
+                bitDepth = 16.0f,
+                sampleRateDivisor = 1.0f,
+                analogSaturation = 0.15f,
+                softDistortion = 0.0f,
+                vinylCrackle = 0.04f,
+                vinylNoise = 0.08f,
+                tapeHiss = 0.04f,
+                wowFlutterDepth = 0.10f,
+                wowFlutterRateHz = 0.72f,
+                warmBassBoostDb = 1.9f,
+                midrangeGainDb = 0.0f,
+                reverbMix = 0.25f,
+                reverbRoomSize = 0.74f,
+                echoMix = 0.07f,
+                echoDelayMs = 360f,
+                echoFeedback = 0.28f,
+                stereoWidth = 1.15f,
+                softCompression = 0.12f,
+                highFreqReductionDb = 2.4f,
+                trebleGainDb = -1.6f,
+                playbackSpeed = 1.0f,
+                masterGainDb = 0.0f
+            )
+        ),
+        // Additional compatible presets (Soft Lo-Fi, Deep Lo-Fi, Vinyl Classic, Cassette Tape, etc.)
         LofiPreset(
             id = "soft_lofi",
             name = "Soft Lo-Fi",
@@ -649,7 +1105,6 @@ object BuiltInLofiPresets {
                 masterGainDb = 0.0f
             )
         ),
-        // 3. Deep Lo-Fi – controlled bass
         LofiPreset(
             id = "deep_lofi",
             name = "Deep Lo-Fi",
@@ -682,7 +1137,6 @@ object BuiltInLofiPresets {
                 masterGainDb = 0.0f
             )
         ),
-        // 4. Vinyl Classic – subtle vinyl texture
         LofiPreset(
             id = "vinyl_classic",
             name = "Vinyl Classic",
@@ -711,72 +1165,6 @@ object BuiltInLofiPresets {
                 softCompression = 0.12f,
                 highFreqReductionDb = 1.5f,
                 trebleGainDb = -1.0f,
-                playbackSpeed = 1.0f,
-                masterGainDb = 0.0f
-            )
-        ),
-        // 5. Rainy Night – soft atmospheric sound
-        LofiPreset(
-            id = "rainy_night",
-            name = "Rainy Night",
-            subtitle = "Soft atmospheric room reflections, warm electric piano tone & delicate vinyl air",
-            moodCategory = "Chill & Rainy",
-            parameters = LofiDspParameters(
-                isLiveLofiEnabled = true,
-                presetId = "rainy_night",
-                presetName = "Rainy Night",
-                masterIntensity = 0.76f,
-                lowPassCutoffHz = 6500f,
-                highPassCutoffHz = 35f,
-                bitDepth = 16.0f,
-                sampleRateDivisor = 1.0f,
-                analogSaturation = 0.20f,
-                vinylCrackle = 0.11f,
-                vinylNoise = 0.12f,
-                tapeHiss = 0.04f,
-                wowFlutterDepth = 0.10f,
-                wowFlutterRateHz = 1.00f,
-                warmBassBoostDb = 2.0f,
-                softDistortion = 0.0f,
-                reverbMix = 0.22f,
-                reverbRoomSize = 0.68f,
-                stereoWidth = 1.12f,
-                softCompression = 0.12f,
-                highFreqReductionDb = 1.8f,
-                trebleGainDb = -1.2f,
-                playbackSpeed = 1.0f,
-                masterGainDb = 0.0f
-            )
-        ),
-        // 6. Dreamy Lo-Fi – spacious and smooth
-        LofiPreset(
-            id = "dreamy_lofi",
-            name = "Dreamy Lo-Fi",
-            subtitle = "Spacious stereo stage, smooth velvet room reverb & gentle analog chorus drift",
-            moodCategory = "Dreamy & Ethereal",
-            parameters = LofiDspParameters(
-                isLiveLofiEnabled = true,
-                presetId = "dreamy_lofi",
-                presetName = "Dreamy Lo-Fi",
-                masterIntensity = 0.75f,
-                lowPassCutoffHz = 7600f,
-                highPassCutoffHz = 30f,
-                bitDepth = 16.0f,
-                sampleRateDivisor = 1.0f,
-                analogSaturation = 0.16f,
-                vinylCrackle = 0.05f,
-                vinylNoise = 0.06f,
-                tapeHiss = 0.04f,
-                wowFlutterDepth = 0.16f,
-                wowFlutterRateHz = 0.90f,
-                warmBassBoostDb = 1.6f,
-                softDistortion = 0.0f,
-                reverbMix = 0.26f,
-                reverbRoomSize = 0.74f,
-                stereoWidth = 1.18f,
-                softCompression = 0.10f,
-                highFreqReductionDb = 1.4f,
-                trebleGainDb = -0.8f,
                 playbackSpeed = 1.0f,
                 masterGainDb = 0.0f
             )

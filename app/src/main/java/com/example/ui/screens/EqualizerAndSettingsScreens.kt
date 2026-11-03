@@ -85,7 +85,8 @@ fun EqualizerScreen(
     onUpdateBand: (Int, Float) -> Unit,
     onSelectBuiltInPreset: (String, List<Float>) -> Unit,
     onSaveCustomEqPreset: (String) -> Unit,
-    onApplyBassEnhancementPreset: (String) -> Unit = {}
+    onApplyBassEnhancementPreset: (String) -> Unit = {},
+    onResetAllEffects: () -> Unit = {}
 ) {
     var showSaveDialog by remember { mutableStateOf(false) }
     var presetNameInput by remember { mutableStateOf("") }
@@ -377,20 +378,47 @@ fun EqualizerScreen(
             }
         }
 
-        // Bass, Midrange, Treble & Stereo Balance
+        // Bass, Sub-Bass, Midrange, Treble & Low-Frequency Mastering (Phase 8)
         item {
             StudioRackSection(
-                title = "BASS, MIDRANGE, TREBLE & STEREO BALANCE",
-                subtitle = "Dedicated Low, Vocal Midrange, High-Air & Left/Right Channel Pan"
+                title = "BASS, SUB-BASS, MIDRANGE & TREBLE MASTERING",
+                subtitle = "Phase 8 Low-Frequency EQ, Harmonic Exciter & Low-Band Compressor with Vocal Protection"
             ) {
                 DspParameterSlider(
-                    label = "Bass Control (Sub & Warm Punch)",
+                    label = "Bass Control (105 Hz Warm Punch)",
                     valueText = String.format(Locale.US, "%+.1f dB", eqState.bassBoostDb),
                     value = eqState.bassBoostDb,
                     valueRange = -12f..12f,
                     accentColor = ElectricPurple,
                     testTag = "eq_bass_slider",
-                    onValueChange = { v -> onUpdateEq { it.copy(bassBoostDb = v) } }
+                    onValueChange = { v -> onUpdateEq { it.copy(bassBoostDb = v, isEnabled = true) } }
+                )
+                DspParameterSlider(
+                    label = "Sub-Bass Control (55 Hz Deep Sub Extension)",
+                    valueText = String.format(Locale.US, "%+.1f dB", eqState.subBassBoostDb),
+                    value = eqState.subBassBoostDb,
+                    valueRange = -12f..12f,
+                    accentColor = ElectricPurple,
+                    testTag = "eq_sub_bass_slider",
+                    onValueChange = { v -> onUpdateEq { it.copy(subBassBoostDb = v, isEnabled = true) } }
+                )
+                DspParameterSlider(
+                    label = "Bass Harmonic Enhancement (Warm 2nd/3rd Overtones)",
+                    valueText = "${(eqState.bassHarmonicDrive * 100).toInt()}%",
+                    value = eqState.bassHarmonicDrive,
+                    valueRange = 0f..1f,
+                    accentColor = AnalogAmber,
+                    testTag = "eq_bass_harmonic_slider",
+                    onValueChange = { v -> onUpdateEq { it.copy(bassHarmonicDrive = v) } }
+                )
+                DspParameterSlider(
+                    label = "Low-Frequency Compression (<125 Hz Tightness)",
+                    valueText = "${(eqState.lowFreqCompression * 100).toInt()}%",
+                    value = eqState.lowFreqCompression,
+                    valueRange = 0f..1f,
+                    accentColor = StudioEmerald,
+                    testTag = "eq_low_freq_comp_slider",
+                    onValueChange = { v -> onUpdateEq { it.copy(lowFreqCompression = v) } }
                 )
                 DspParameterSlider(
                     label = "Midrange Control (Vocal Presence & Clarity)",
@@ -399,7 +427,7 @@ fun EqualizerScreen(
                     valueRange = -12f..12f,
                     accentColor = StudioEmerald,
                     testTag = "eq_midrange_slider",
-                    onValueChange = { v -> onUpdateEq { it.copy(midrangeBoostDb = v) } }
+                    onValueChange = { v -> onUpdateEq { it.copy(midrangeBoostDb = v, isEnabled = true) } }
                 )
                 DspParameterSlider(
                     label = "Treble Control (Crisp Air & Detail)",
@@ -408,7 +436,40 @@ fun EqualizerScreen(
                     valueRange = -12f..12f,
                     accentColor = NeonCyan,
                     testTag = "eq_treble_slider",
-                    onValueChange = { v -> onUpdateEq { it.copy(trebleBoostDb = v) } }
+                    onValueChange = { v -> onUpdateEq { it.copy(trebleBoostDb = v, isEnabled = true) } }
+                )
+            }
+        }
+
+        // Phase 9: Advanced Audio Controls (Preamp, Stereo Width, Balance, DRC, Limiter, Enhancement ON/OFF, Reset)
+        item {
+            StudioRackSection(
+                title = "ADVANCED MASTERING & AUDIO CONTROLS",
+                subtitle = "Preamp • Stereo Width • Balance • Dynamic Range Control • True-Peak Limiter"
+            ) {
+                ToggleSettingRow(
+                    title = "Audio Enhancement Engine (Master ON/OFF)",
+                    subtitle = "Enable or bypass Preamp, Bass Enhancement, Stereo Width & DRC stages",
+                    checked = eqState.audioEnhancementEnabled,
+                    onCheckedChange = { v -> onUpdateEq { it.copy(audioEnhancementEnabled = v) } }
+                )
+                DspParameterSlider(
+                    label = "Preamp Gain (-12 dB to +12 dB)",
+                    valueText = String.format(Locale.US, "%+.1f dB", eqState.preampGainDb),
+                    value = eqState.preampGainDb,
+                    valueRange = -12f..12f,
+                    accentColor = NeonCyan,
+                    testTag = "eq_preamp_slider",
+                    onValueChange = { v -> onUpdateEq { it.copy(preampGainDb = v) } }
+                )
+                DspParameterSlider(
+                    label = "Master Stereo Width (0% Mono – 200% Wide)",
+                    valueText = "${(eqState.masterStereoWidth * 100).toInt()}%",
+                    value = eqState.masterStereoWidth,
+                    valueRange = 0f..2f,
+                    accentColor = ElectricPurple,
+                    testTag = "eq_stereo_width_slider",
+                    onValueChange = { v -> onUpdateEq { it.copy(masterStereoWidth = v) } }
                 )
                 DspParameterSlider(
                     label = "Stereo Balance (Left / Center / Right)",
@@ -423,13 +484,22 @@ fun EqualizerScreen(
                     testTag = "eq_balance_slider",
                     onValueChange = { v -> onUpdateEq { it.copy(stereoBalance = v) } }
                 )
+                DspParameterSlider(
+                    label = "Dynamic Range Control (DRC Bus Compression)",
+                    valueText = "${(eqState.dynamicRangeControl * 100).toInt()}%",
+                    value = eqState.dynamicRangeControl,
+                    valueRange = 0f..1f,
+                    accentColor = StudioEmerald,
+                    testTag = "eq_drc_slider",
+                    onValueChange = { v -> onUpdateEq { it.copy(dynamicRangeControl = v) } }
+                )
             }
         }
 
         // Advanced Bass Enhancement Quick-Select
         item {
             StudioRackSection(
-                title = "ADVANCED BASS ENHANCEMENT",
+                title = "ADVANCED BASS ENHANCEMENT PRESETS",
                 subtitle = "Clean, powerful low-end presets with automatic headroom & vocal protection"
             ) {
                 val bassEnhancements = listOf(
@@ -475,21 +545,27 @@ fun EqualizerScreen(
             }
         }
 
-        // High-Quality Audio & Transitions
+        // High-Quality Audio, Output Limiter & Reset All Effects
         item {
             StudioRackSection(
-                title = "HIGH-QUALITY AUDIO & TRANSITIONS",
-                subtitle = "Soft limiter normalization, fade-in/out & gapless playback"
+                title = "HIGH-QUALITY AUDIO, LIMITER & TRANSITIONS",
+                subtitle = "True-peak output limiter (-0.3 dBFS), loudness normalization & gapless playback"
             ) {
                 ToggleSettingRow(
-                    title = "Volume Normalization & Anti-Clip Soft Limiter",
-                    subtitle = "Prevents digital clipping when stacking bass boost & saturation",
+                    title = "Output True-Peak Limiter (-0.3 dBFS Protection)",
+                    subtitle = "Envelope-tracked brickwall ceiling preventing digital clipping at any gain",
+                    checked = eqState.outputLimiterEnabled,
+                    onCheckedChange = { v -> onUpdateEq { it.copy(outputLimiterEnabled = v) } }
+                )
+                ToggleSettingRow(
+                    title = "Volume Normalization",
+                    subtitle = "Maintains balanced loudness across presets and tracks",
                     checked = eqState.volumeNormalization,
                     onCheckedChange = { v -> onUpdateEq { it.copy(volumeNormalization = v) } }
                 )
                 ToggleSettingRow(
-                    title = "Smooth Track Transitions (Fade-In)",
-                    subtitle = "Applies smooth ${eqState.fadeInOutMs}ms envelope on track start & seek",
+                    title = "Smooth Parameter & Track Transitions",
+                    subtitle = "Applies click-free slewing and ${eqState.fadeInOutMs}ms fade-in envelope",
                     checked = eqState.smoothTransitions,
                     onCheckedChange = { v -> onUpdateEq { it.copy(smoothTransitions = v) } }
                 )
@@ -499,6 +575,20 @@ fun EqualizerScreen(
                     checked = eqState.gaplessPlayback,
                     onCheckedChange = { v -> onUpdateEq { it.copy(gaplessPlayback = v) } }
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        onUpdateEq { EqualizerState() }
+                        onResetAllEffects()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("eq_reset_all_effects_button")
+                ) {
+                    Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp), tint = NeonCyan)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Reset All Audio Effects & EQ to Flat Normal", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+                }
             }
         }
     }

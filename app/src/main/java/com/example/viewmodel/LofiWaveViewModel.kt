@@ -38,6 +38,7 @@ import com.example.model.ConverterCategory
 import com.example.model.EqualizerState
 import com.example.model.ExportProgressState
 import com.example.model.ExportQualityOption
+import com.example.model.HeadphoneRouteStatus
 import com.example.model.LibraryFilterTab
 import com.example.model.LibrarySortOrder
 import com.example.model.LiveSoundMode
@@ -45,6 +46,7 @@ import com.example.model.LofiDspParameters
 import com.example.model.LofiPreset
 import com.example.model.MusicConverterPreset
 import com.example.model.MusicMoodAnalysisResult
+import com.example.model.PrimaryAudioMode
 import com.example.model.TrackItem
 import com.example.model.VisualizerMode
 import com.example.model.VisualizerSnapshot
@@ -79,6 +81,9 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
 
     // Real-time audio visualizer flow directly from PCM DSP processor
     val visualizerFlow: StateFlow<VisualizerSnapshot> = AudioEngineBridge.dspProcessor.visualizerFlow
+
+    // Real-time headphone & audio output route monitoring
+    val headphoneRouteStatus: StateFlow<HeadphoneRouteStatus> = AudioEngineBridge.headphoneRouteStatus
 
     // Device & Studio tracks
     private val _studioTracks = MutableStateFlow<List<TrackItem>>(emptyList())
@@ -867,8 +872,18 @@ class LofiWaveViewModel(application: Application) : AndroidViewModel(application
     }
 
     // =========================================================================
-    // 10 LIVE SOUND MODES & 4 VISUALIZER MODES
+    // 4 PRIMARY AUDIO MODES, 10 LIVE SOUND MODES & 4 VISUALIZER MODES
     // =========================================================================
+
+    fun setPrimaryAudioMode(primaryMode: PrimaryAudioMode) {
+        val targetSoundMode = when (primaryMode) {
+            PrimaryAudioMode.NORMAL -> LiveSoundMode.ORIGINAL_STEREO
+            PrimaryAudioMode.EIGHT_D_AUDIO -> LiveSoundMode.EIGHT_D_ULTRA
+            PrimaryAudioMode.THREE_D_SURROUND -> LiveSoundMode.THREE_D_SPATIAL
+            PrimaryAudioMode.LOFI_AUDIO -> LiveSoundMode.LIVE_LOFI
+        }
+        setSoundMode(targetSoundMode)
+    }
 
     fun setSoundMode(mode: LiveSoundMode) {
         clearConverterEqOverrideIfNeeded()

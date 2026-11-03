@@ -48,6 +48,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +59,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audio.AudioEngineBridge
 import com.example.model.BuiltInConverterPresets
 import com.example.model.ConverterCategory
 import com.example.model.ExportProgressState
@@ -65,6 +68,7 @@ import com.example.model.ExportQualityOption
 import com.example.model.LiveSoundMode
 import com.example.model.LofiDspParameters
 import com.example.model.MusicConverterPreset
+import com.example.model.PrimaryAudioMode
 import com.example.model.TrackItem
 import com.example.model.VisualizerMode
 import com.example.model.VisualizerSnapshot
@@ -86,10 +90,13 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Reusable Live Sound Modes Selector Panel (Part 2: 10 Real-Time Sound Modes).
- * Allows instant zero-restart switching between Original Stereo, Live Lo-Fi, 8D Ultra,
- * 3D Spatial Audio (Binaural HRTF), Ultra Surround, Bass Boost, Deep Bass, Soft Bass,
- * Clear Vocal, and Dreamy Sound.
+ * Reusable Live Sound Modes Selector Panel.
+ * Provides:
+ * - 4 Primary Independent Audio Modes (NORMAL, 8D AUDIO, 3D SURROUND, LOFI AUDIO)
+ * - Real-time Headphone & Audio Output Route Telemetry
+ * - 10 Studio Sound Modes
+ * - Full Binaural 8D Controls (Speed, CW/CCW, Intensity, Depth, Pause Movement, Manual Angle)
+ * - Full 3D Surround Controls (Intensity, Width, Depth, Ambience, Center Vocal Focus)
  */
 @Composable
 fun LiveSoundModesSelectorSection(
@@ -99,6 +106,8 @@ fun LiveSoundModesSelectorSection(
     modifier: Modifier = Modifier
 ) {
     val activeMode = dspParams.soundMode
+    val activePrimaryMode = PrimaryAudioMode.fromLiveSoundMode(activeMode)
+    val routeStatus by AudioEngineBridge.headphoneRouteStatus.collectAsStateWithLifecycle()
 
     Surface(
         color = ElevatedCharcoal.copy(alpha = 0.92f),
@@ -119,7 +128,10 @@ fun LiveSoundModesSelectorSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Headphones,
                         contentDescription = "Sound Modes",
@@ -134,7 +146,7 @@ fun LiveSoundModesSelectorSection(
                             color = NeonCyan
                         )
                         Text(
-                            text = "Active: ${activeMode.displayName} • ${activeMode.subtitle}",
+                            text = "Active: ${activeMode.displayName} • ${routeStatus.routeName} (${routeStatus.estimatedOutputLatencyMs.roundToInt()}ms)",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary,
                             maxLines = 1,
@@ -156,6 +168,53 @@ fun LiveSoundModesSelectorSection(
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
+                }
+            }
+
+            // 4 Independent Primary Audio Modes Bar (NORMAL | 8D AUDIO | 3D SURROUND | LOFI AUDIO)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("primary_audio_modes_row")
+            ) {
+                PrimaryAudioMode.entries.forEach { pMode ->
+                    val isSelected = activePrimaryMode == pMode
+                    Surface(
+                        color = if (isSelected) NeonCyan.copy(alpha = 0.20f) else DeepObsidian,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .border(
+                                width = if (isSelected) 1.5.dp else 1.dp,
+                                color = if (isSelected) NeonCyan else SubtleBorder,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable {
+                                val target = when (pMode) {
+                                    PrimaryAudioMode.NORMAL -> LiveSoundMode.ORIGINAL_STEREO
+                                    PrimaryAudioMode.EIGHT_D_AUDIO -> LiveSoundMode.EIGHT_D_ULTRA
+                                    PrimaryAudioMode.THREE_D_SURROUND -> LiveSoundMode.THREE_D_SPATIAL
+                                    PrimaryAudioMode.LOFI_AUDIO -> LiveSoundMode.LIVE_LOFI
+                                }
+                                onSelectSoundMode(target)
+                            }
+                            .testTag("primary_audio_mode_${pMode.name.lowercase()}")
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
+                        ) {
+                            Text(
+                                text = pMode.displayName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isSelected) NeonCyan else TextPrimary,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
 
@@ -221,7 +280,7 @@ fun LiveSoundModesSelectorSection(
                 }
             }
 
-            // Dedicated real-time controls when 8D Ultra, 3D Spatial, or Ultra Surround is active
+            // Dedicated real-time controls when 8D Audio, 3D Spatial, or Ultra Surround is active
             if (onUpdateDsp != null && (activeMode == LiveSoundMode.EIGHT_D_ULTRA ||
                     activeMode == LiveSoundMode.THREE_D_SPATIAL ||
                     activeMode == LiveSoundMode.ULTRA_SURROUND)
@@ -234,35 +293,140 @@ fun LiveSoundModesSelectorSection(
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    DspParameterSlider(
-                        label = "Spatial / Surround Intensity",
-                        valueText = "${(dspParams.spatialIntensity * 100).roundToInt()}%",
-                        value = dspParams.spatialIntensity,
-                        valueRange = 0.1f..1.0f,
-                        accentColor = NeonCyan,
-                        testTag = "slider_spatial_intensity",
-                        onValueChange = { v -> onUpdateDsp { it.copy(spatialIntensity = v) } }
-                    )
                     if (activeMode == LiveSoundMode.EIGHT_D_ULTRA) {
+                        Text(
+                            text = "8D BINAURAL SPATIAL ENGINE (HRTF + ITD + ILD + PINNA CUES)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeonCyan,
+                            fontWeight = FontWeight.Bold
+                        )
+                        // Direction (CW / CCW) & Pause Movement toggles
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            FilterChip(
+                                selected = dspParams.eightDClockwise,
+                                onClick = { onUpdateDsp { it.copy(eightDClockwise = true) } },
+                                label = { Text("Clockwise ↻", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("chip_8d_clockwise")
+                            )
+                            FilterChip(
+                                selected = !dspParams.eightDClockwise,
+                                onClick = { onUpdateDsp { it.copy(eightDClockwise = false) } },
+                                label = { Text("Anticlockwise ↺", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("chip_8d_anticlockwise")
+                            )
+                            FilterChip(
+                                selected = dspParams.eightDPauseMovement,
+                                onClick = { onUpdateDsp { it.copy(eightDPauseMovement = !it.eightDPauseMovement) } },
+                                label = {
+                                    Text(
+                                        if (dspParams.eightDPauseMovement) "Paused" else "Pause Orbit",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("chip_8d_pause_movement")
+                            )
+                        }
+
+                        DspParameterSlider(
+                            label = "8D Spatial Intensity",
+                            valueText = "${(dspParams.spatialIntensity * 100).roundToInt()}%",
+                            value = dspParams.spatialIntensity,
+                            valueRange = 0.1f..1.0f,
+                            accentColor = NeonCyan,
+                            testTag = "slider_spatial_intensity",
+                            onValueChange = { v -> onUpdateDsp { it.copy(spatialIntensity = v) } }
+                        )
                         DspParameterSlider(
                             label = "8D Rotation Orbit Speed",
                             valueText = String.format(Locale.US, "%.2f Hz", dspParams.eightDRotationSpeedHz),
                             value = dspParams.eightDRotationSpeedHz,
-                            valueRange = 0.04f..0.45f,
+                            valueRange = 0.04f..0.60f,
                             accentColor = ElectricPurpleBright,
                             testTag = "slider_8d_rotation_speed",
                             onValueChange = { v -> onUpdateDsp { it.copy(eightDRotationSpeedHz = v) } }
                         )
-                    }
-                    if (activeMode == LiveSoundMode.THREE_D_SPATIAL) {
                         DspParameterSlider(
-                            label = "HRTF Virtual Stage Distance",
-                            valueText = "${(dspParams.spatialDistance * 100).roundToInt()}%",
-                            value = dspParams.spatialDistance,
+                            label = "8D Movement Depth & Room Distance",
+                            valueText = "${(dspParams.eightDMovementDepth * 100).roundToInt()}%",
+                            value = dspParams.eightDMovementDepth,
+                            valueRange = 0.05f..1.0f,
+                            accentColor = StudioEmerald,
+                            testTag = "slider_8d_movement_depth",
+                            onValueChange = { v ->
+                                onUpdateDsp { it.copy(eightDMovementDepth = v, spatialDistance = v) }
+                            }
+                        )
+                        DspParameterSlider(
+                            label = "Manual Direction Angle (Front 0° / L -90° / R +90° / Rear ±180°)",
+                            valueText = "${dspParams.spatialAzimuthDeg.roundToInt()}°",
+                            value = dspParams.spatialAzimuthDeg,
+                            valueRange = -180f..180f,
+                            accentColor = AnalogAmber,
+                            testTag = "slider_8d_manual_angle",
+                            onValueChange = { v -> onUpdateDsp { it.copy(spatialAzimuthDeg = v) } }
+                        )
+                    } else {
+                        Text(
+                            text = "3D SURROUND SOUND ENGINE (VIRTUAL SPEAKERS + DECORRELATION)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeonCyan,
+                            fontWeight = FontWeight.Bold
+                        )
+                        DspParameterSlider(
+                            label = "Surround Intensity",
+                            valueText = "${(dspParams.spatialIntensity * 100).roundToInt()}%",
+                            value = dspParams.spatialIntensity,
+                            valueRange = 0.1f..1.0f,
+                            accentColor = NeonCyan,
+                            testTag = "slider_spatial_intensity",
+                            onValueChange = { v -> onUpdateDsp { it.copy(spatialIntensity = v) } }
+                        )
+                        DspParameterSlider(
+                            label = "Surround Stereo Width",
+                            valueText = "${(dspParams.surroundWidth * 100).roundToInt()}%",
+                            value = dspParams.surroundWidth,
+                            valueRange = 0.6f..2.0f,
+                            accentColor = ElectricPurpleBright,
+                            testTag = "slider_surround_width",
+                            onValueChange = { v -> onUpdateDsp { it.copy(surroundWidth = v) } }
+                        )
+                        DspParameterSlider(
+                            label = "Surround Acoustic Depth (Early Reflections)",
+                            valueText = "${(dspParams.surroundDepth * 100).roundToInt()}%",
+                            value = dspParams.surroundDepth,
                             valueRange = 0.05f..1.0f,
                             accentColor = AnalogAmber,
                             testTag = "slider_3d_spatial_distance",
-                            onValueChange = { v -> onUpdateDsp { it.copy(spatialDistance = v) } }
+                            onValueChange = { v ->
+                                onUpdateDsp { it.copy(surroundDepth = v, spatialDistance = v) }
+                            }
+                        )
+                        DspParameterSlider(
+                            label = "Surround Room Ambience",
+                            valueText = "${(dspParams.surroundAmbience * 100).roundToInt()}%",
+                            value = dspParams.surroundAmbience,
+                            valueRange = 0.0f..1.0f,
+                            accentColor = StudioEmerald,
+                            testTag = "slider_surround_ambience",
+                            onValueChange = { v -> onUpdateDsp { it.copy(surroundAmbience = v) } }
+                        )
+                        DspParameterSlider(
+                            label = "Center Vocal Focus (Lead Clarity)",
+                            valueText = "${(dspParams.surroundCenterFocus * 100).roundToInt()}%",
+                            value = dspParams.surroundCenterFocus,
+                            valueRange = 0.1f..1.0f,
+                            accentColor = VinylRose,
+                            testTag = "slider_surround_center_focus",
+                            onValueChange = { v -> onUpdateDsp { it.copy(surroundCenterFocus = v) } }
                         )
                     }
                 }

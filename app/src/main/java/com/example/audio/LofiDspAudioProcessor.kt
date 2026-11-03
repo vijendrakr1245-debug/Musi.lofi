@@ -85,11 +85,18 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
     // Smoothly slewed parameters to prevent zipper noise or clicks on mode/preset changes
     private var currentWetDryMix: Float = 1.0f
     private var currentMasterGain: Float = 1.0f
+    private var currentPreampGain: Float = 1.0f
     private var smoothedLowPassHz: Float = 8800f
     private var lastComputedLowPassHz: Float = -1f
     private var trackFadeEnvelope: Float = 1.0f
     private var modeTransitionGain: Float = 1.0f
     private var lastActiveSoundMode: LiveSoundMode = LiveSoundMode.LIVE_LOFI
+
+    // Phase 8 & 9 Bass Enhancement, Low-Frequency Compressor & Dynamic Range Control state
+    private var enhLowLpL: Float = 0f
+    private var enhLowLpR: Float = 0f
+    private var enhLowCompEnv: Float = 0f
+    private var drcEnvelope: Float = 0f
 
     // Per-channel biquad filters for Lo-Fi & Equalizer stages
     private val highPassFilters = Array(2) { BiquadFilter() }
@@ -121,9 +128,11 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
     private var isModeFilter2Active = false
     private var isModeFilter3Active = false
 
-    // Binaural HRTF (3D Spatial Audio) Pinna Elevation Notch & Concha Resonance filters
+    // Binaural HRTF (8D & 3D Spatial Audio) Pinna Elevation Notch & Concha Resonance filters
     private val hrtfPinnaNotchFilters = Array(2) { BiquadFilter() }
     private val hrtfConchaPeakFilters = Array(2) { BiquadFilter() }
+    private val eightDFrontPresenceFilters = Array(2) { BiquadFilter() }
+    private val eightDRearNotchFilters = Array(2) { BiquadFilter() }
     private var lastHrtfNotchFreqHz: Float = 0f
     private var lastHrtfSampleRate: Float = 0f
 
@@ -150,18 +159,43 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
     private var wowPhase = 0.0
     private var flutterPhase = 0.0
 
-    // 8D Ultra & 3D Spatial Binaural HRTF state (ITD fractional delay + head-shadow ILD + early reflections)
-    private val spatialItdDelaySize = 2048
+    // 8D Binaural HRTF & 3D Surround Engine state (4096 samples ~85ms for ITD + Early Reflections)
+    private val spatialItdDelaySize = 4096
     private val spatialItdDelayMask = spatialItdDelaySize - 1
     private val spatialItdDelayLeft = FloatArray(spatialItdDelaySize)
     private val spatialItdDelayRight = FloatArray(spatialItdDelaySize)
     private var spatialItdWriteIndex = 0
     private var eightDPhase = 0.0
+    private var smoothedEightDSin = 0.0f
+    private var smoothedEightDCos = 1.0f
+    private var eightDIpsilateralLpL = 0f
+    private var eightDIpsilateralLpR = 0f
+    private var eightDContralateralLpL = 0f
+    private var eightDContralateralLpR = 0f
+    private var eightDPinnaRearLpL = 0f
+    private var eightDPinnaRearLpR = 0f
+    private var eightDDistAirLpL = 0f
+    private var eightDDistAirLpR = 0f
+
+    // Dedicated 3D Surround Sound Engine state (completely separate from 8D rotation)
     private var spatialOrbitPhase = 0.0
     private var hrtfShadowLeftState = 0f
     private var hrtfShadowRightState = 0f
     private var surroundSideHpPrevIn = 0f
     private var surroundSideHpPrevOut = 0f
+    private var surroundSubBassLpMid = 0f
+    private var surroundAp1InL = 0f
+    private var surroundAp1OutL = 0f
+    private var surroundAp2InL = 0f
+    private var surroundAp2OutL = 0f
+    private var surroundAp1InR = 0f
+    private var surroundAp1OutR = 0f
+    private var surroundAp2InR = 0f
+    private var surroundAp2OutR = 0f
+    private var surroundErLpL = 0f
+    private var surroundErLpR = 0f
+    private var surroundErHpL = 0f
+    private var surroundErHpR = 0f
 
     // Pre-delay buffer for Slowed + Reverb & Dreamy Hall Reverb (4096 samples ~ 92ms)
     private val reverbPreDelaySize = 4096
@@ -289,9 +323,16 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
     @Volatile
     private var coeffsDirty = true
 
+    // Magnetic tape hysteresis state for Stage 4C Tape-Style Harmonic Coloration
+    private var tapeHysteresisStateL: Float = 0f
+    private var tapeHysteresisStateR: Float = 0f
+
     fun updateDspParameters(newParams: LofiDspParameters) {
         val prev = targetDspParams
         targetDspParams = newParams
+        if (prev.soundMode != newParams.soundMode) {
+            modeTransitionGain = 0.82f
+        }
         if (prev.soundMode != newParams.soundMode ||
             prev.isLiveLofiEnabled != newParams.isLiveLofiEnabled ||
             prev.presetId != newParams.presetId ||
@@ -301,7 +342,9 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
             abs(prev.warmBassBoostDb - newParams.warmBassBoostDb) > 0.02f ||
             abs(prev.midrangeGainDb - newParams.midrangeGainDb) > 0.02f ||
             abs(prev.trebleGainDb - newParams.trebleGainDb) > 0.02f ||
-            abs(prev.highFreqReductionDb - newParams.highFreqReductionDb) > 0.02f
+            abs(prev.highFreqReductionDb - newParams.highFreqReductionDb) > 0.02f ||
+            abs(prev.spatialIntensity - newParams.spatialIntensity) > 0.005f ||
+            abs(prev.spatialElevationDeg - newParams.spatialElevationDeg) > 0.5f
         ) {
             coeffsDirty = true
         }
@@ -413,10 +456,13 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
             }
         }
 
-        // 2. Sub-Bass & Bass Shelf Filters
+        // 2. Sub-Bass & Bass Shelf Filters (Phase 8: Sub-bass control + Bass enhancement + Vocal protection)
+        val eqEnhActive = eq.isEnabled && eq.audioEnhancementEnabled
         val bassBoost = (if (dspActive) lofi.warmBassBoostDb * intensity else 0f) +
-            (if (eq.isEnabled) eq.bassBoostDb else 0f)
-        val subBassDb = if (bassBoost > 0f) (bassBoost * 0.45f).coerceIn(0f, 6.0f) else 0f
+            (if (eqEnhActive) eq.bassBoostDb else 0f)
+        val explicitSubBass = if (eqEnhActive) eq.subBassBoostDb else 0f
+        val autoSubBass = if (bassBoost > 0f) (bassBoost * 0.45f).coerceIn(0f, 6.0f) else 0f
+        val subBassDb = (autoSubBass + explicitSubBass).coerceIn(-12.0f, 12.0f)
         isSubBassShelfActive = abs(subBassDb) >= 0.05f
         if (isSubBassShelfActive) {
             for (ch in 0..1) {
@@ -424,7 +470,7 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
             }
         }
 
-        val clampedBassShelfDb = bassBoost.coerceIn(-10.0f, 10.0f)
+        val clampedBassShelfDb = bassBoost.coerceIn(-12.0f, 12.0f)
         isBassShelfActive = abs(clampedBassShelfDb) >= 0.05f
         if (isBassShelfActive) {
             for (ch in 0..1) {
@@ -434,8 +480,8 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
 
         // 3. Midrange Peaking Filter (1.1 kHz)
         val midBoost = (if (dspActive) lofi.midrangeGainDb * intensity else 0f) +
-            (if (eq.isEnabled) eq.midrangeBoostDb else 0f)
-        val clampedMidDb = midBoost.coerceIn(-10.0f, 10.0f)
+            (if (eqEnhActive) eq.midrangeBoostDb else 0f)
+        val clampedMidDb = midBoost.coerceIn(-12.0f, 12.0f)
         isMidPeakActive = abs(clampedMidDb) >= 0.05f
         if (isMidPeakActive) {
             for (ch in 0..1) {
@@ -443,11 +489,20 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
             }
         }
 
-        // 4. Vocal Mud Cut (230 Hz) & Vocal Presence Boost (2.45 kHz) for Lo-Fi vocal intelligibility
-        isVocalClarityActive = lofiColorActive
+        // 4. Vocal Mud Cut (230 Hz) & Vocal Presence Boost (2.45 kHz) for Lo-Fi & Heavy Bass vocal protection
+        val heavyEqBass = eqEnhActive && (eq.bassBoostDb > 2.5f || eq.subBassBoostDb > 2.5f)
+        isVocalClarityActive = lofiColorActive || heavyEqBass
         if (isVocalClarityActive) {
-            val mudCutDb = (-1.3f * intensity).coerceIn(-2.5f, 0f)
-            val presenceBoostDb = (1.6f * intensity).coerceIn(0f, 3.0f)
+            val mudCutDb = if (lofiColorActive) {
+                (-1.3f * intensity).coerceIn(-2.5f, 0f)
+            } else {
+                (-0.22f * max(eq.bassBoostDb, eq.subBassBoostDb)).coerceIn(-2.2f, 0f)
+            }
+            val presenceBoostDb = if (lofiColorActive) {
+                (1.6f * intensity).coerceIn(0f, 3.0f)
+            } else {
+                (0.18f * max(eq.bassBoostDb, eq.subBassBoostDb)).coerceIn(0f, 1.8f)
+            }
             for (ch in 0..1) {
                 vocalMudCutFilters[ch].setPeakingEq(sampleRate, 230f, 1.15f, mudCutDb)
                 vocalPresenceFilters[ch].setPeakingEq(sampleRate, 2450f, 1.05f, presenceBoostDb)
@@ -456,7 +511,7 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
 
         // 5. High-Shelf Filter (4.8 kHz)
         val netTrebleDb = (if (dspActive) (lofi.trebleGainDb - lofi.highFreqReductionDb * 0.55f) * intensity else 0f) +
-            (if (eq.isEnabled) eq.trebleBoostDb else 0f)
+            (if (eqEnhActive) eq.trebleBoostDb else 0f)
         val clampedTrebleDb = netTrebleDb.coerceIn(-12.0f, 12.0f)
         isHighShelfActive = abs(clampedTrebleDb) >= 0.05f
         if (isHighShelfActive) {
@@ -722,25 +777,44 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
 
         val intensity = lofiParams.masterIntensity.coerceIn(0f, 1f)
         val targetLinearMasterGain = 10.0.pow(lofiParams.masterGainDb.coerceIn(-12f, 12f) / 20.0).toFloat()
+        val effectivePreampDb = if (eq.audioEnhancementEnabled) eq.preampGainDb.coerceIn(-12f, 12f) else 0f
+        val targetLinearPreampGain = 10.0.pow(effectivePreampDb / 20.0).toFloat()
         val gainSlewStep = 1.0f / (srFloat * 0.015f)
 
         val bal = eq.stereoBalance.coerceIn(-1f, 1f)
         val leftChannelTrim = if (bal > 0f) 1f - bal else 1f
         val rightChannelTrim = if (bal < 0f) 1f + bal else 1f
 
+        val masterWidth = if (eq.audioEnhancementEnabled) eq.masterStereoWidth.coerceIn(0.0f, 2.0f) else 1.0f
+        val enhHarmonicDrive = if (eq.audioEnhancementEnabled) eq.bassHarmonicDrive.coerceIn(0f, 1f) else 0f
+        val enhLowFreqComp = if (eq.audioEnhancementEnabled) eq.lowFreqCompression.coerceIn(0f, 1f) else 0f
+        val drcAmount = if (eq.audioEnhancementEnabled) eq.dynamicRangeControl.coerceIn(0f, 1f) else 0f
+
         val fadeDurationSec = (eq.fadeInOutMs.coerceIn(0, 2000) / 1000f)
         val fadeStep = if (fadeDurationSec > 0.005f) 1.0f / (srFloat * fadeDurationSec) else 1.0f
+        if (!eq.smoothTransitions) {
+            currentWetDryMix = targetMix
+            currentMasterGain = targetLinearMasterGain
+            currentPreampGain = targetLinearPreampGain
+        }
 
-        // Fast Bit-Transparent Bypass Path for Original Stereo when EQ & Gain are neutral
+        // Fast Bit-Transparent Bypass Path for Original Stereo when EQ & Mastering Controls are neutral
         val canFastBypass = !isDspActive &&
             activeEqBandCount == 0 &&
+            !isSubBassShelfActive &&
             !isBassShelfActive &&
             !isMidPeakActive &&
             !isHighShelfActive &&
+            enhHarmonicDrive < 0.001f &&
+            enhLowFreqComp < 0.001f &&
+            drcAmount < 0.001f &&
+            abs(masterWidth - 1.0f) < 0.001f &&
             currentWetDryMix < 0.0001f &&
             trackFadeEnvelope >= 0.9999f &&
             abs(currentMasterGain - 1.0f) < 0.0005f &&
             abs(targetLinearMasterGain - 1.0f) < 0.0005f &&
+            abs(currentPreampGain - 1.0f) < 0.0005f &&
+            abs(targetLinearPreampGain - 1.0f) < 0.0005f &&
             abs(leftChannelTrim - 1.0f) < 0.0005f &&
             abs(rightChannelTrim - 1.0f) < 0.0005f
 
@@ -814,11 +888,18 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
         val tapeHissAmount = if (isLofiColorActive) (lofiParams.tapeHiss * intensity).coerceIn(0f, 1f) else 0f
         val anyVinylOrTapeNoise = crackleAmount > 0.002f || vinylNoiseAmount > 0.002f || tapeHissAmount > 0.002f
 
-        val reverbWet = (lofiParams.reverbMix * intensity).coerceIn(0f, 0.65f)
+        val baseReverbWet = (lofiParams.reverbMix * intensity).coerceIn(0f, 0.65f)
+        val isSurroundMode = mode == LiveSoundMode.THREE_D_SPATIAL || mode == LiveSoundMode.ULTRA_SURROUND
+        val surroundAmb = if (isSurroundMode) {
+            (lofiParams.surroundAmbience.coerceIn(0f, 1f) * lofiParams.spatialIntensity.coerceIn(0f, 1f) * 0.42f)
+        } else {
+            0f
+        }
+        val reverbWet = max(baseReverbWet, surroundAmb).coerceIn(0f, 0.68f)
         val roomFeedback = (0.64f + lofiParams.reverbRoomSize.coerceIn(0.1f, 0.98f) * 0.26f).coerceIn(0.64f, 0.90f)
         val reverbDamp = if (mode == LiveSoundMode.DREAMY_SOUND) 0.28f else 0.36f
-        val preDelaySamples = if (reverbWet > 0.25f && lofiParams.reverbRoomSize > 0.76f) {
-            (0.026f * srFloat).toInt().coerceIn(1, reverbPreDelaySize - 4)
+        val preDelaySamples = if ((reverbWet > 0.25f && lofiParams.reverbRoomSize > 0.76f) || isSurroundMode) {
+            (0.022f * srFloat).toInt().coerceIn(1, reverbPreDelaySize - 4)
         } else {
             0
         }
@@ -834,8 +915,15 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
         val spatInt = lofiParams.spatialIntensity.coerceIn(0f, 1f)
 
         val eightDRateHz = lofiParams.eightDRotationSpeedHz.coerceIn(0.04f, 0.80f).toDouble()
-        val eightDPhaseInc = 2.0 * PI * eightDRateHz / sr
+        val eightDDirSign = if (lofiParams.eightDClockwise) 1.0 else -1.0
+        val eightDPhaseInc = if (lofiParams.eightDPauseMovement) 0.0 else (2.0 * PI * eightDRateHz / sr) * eightDDirSign
+        val eightDManualOffsetRad = lofiParams.spatialAzimuthDeg.coerceIn(-180f, 180f) * (PI / 180.0)
+        val eightDDepth = max(lofiParams.eightDMovementDepth.coerceIn(0f, 1f), lofiParams.spatialDistance.coerceIn(0f, 1f))
         val spatialOrbitPhaseInc = 2.0 * PI * 0.12 / sr
+
+        val surroundWidthVal = lofiParams.surroundWidth.coerceIn(0.5f, 2.0f)
+        val surroundDepthVal = lofiParams.surroundDepth.coerceIn(0f, 1f)
+        val surroundCenterFocusVal = lofiParams.surroundCenterFocus.coerceIn(0f, 1f)
 
         val isLowPassActive = isDspActive && targetLowPassHz < 17800f
         val isNightcoreStyle = isDspActive && (lofiParams.presetId == "conv_nightcore" || lofiParams.playbackSpeed > 1.12f)
@@ -844,25 +932,41 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
         } else {
             1.0f
         }
-        val makeupGain = (1.0f + intensity * 0.04f - satAmount * 0.06f) * bassTrim
+        // Stage 15: Automatic Output Gain Compensation so enabling LoFi / 8D / 3D Surround
+        // maintains balanced perceived loudness without artificial volume jumps or drops
+        val lpEnergyLossComp = if (isLowPassActive && targetLowPassHz < 6500f) {
+            1.0f + ((6500f - targetLowPassHz) / 6500f).coerceIn(0f, 0.55f) * 0.14f
+        } else {
+            1.0f
+        }
+        val compGainMakeup = 1.0f + compAmount * 0.08f
+        val makeupGain = (1.0f + intensity * 0.03f - satAmount * 0.05f) * bassTrim * lpEnergyLossComp * compGainMakeup
 
-        // Precompute Binaural HRTF Pinna Notch & Concha Resonance once per buffer when in 3D Spatial mode
-        if (isDspActive && mode == LiveSoundMode.THREE_D_SPATIAL) {
+        // Precompute Binaural HRTF Pinna Notch, Concha Resonance & 8D Front/Rear spectral filters once per buffer
+        if (isDspActive && (mode == LiveSoundMode.THREE_D_SPATIAL || mode == LiveSoundMode.EIGHT_D_ULTRA || mode == LiveSoundMode.ULTRA_SURROUND)) {
             val elevNorm = ((lofiParams.spatialElevationDeg.coerceIn(-45f, 90f) + 45f) / 135f)
             val pinnaNotchFreq = (6200f + elevNorm * 3000f).coerceIn(5200f, min(11000f, srFloat * 0.42f))
-            if (abs(pinnaNotchFreq - lastHrtfNotchFreqHz) > 25f || lastHrtfSampleRate != srFloat) {
+            if (abs(pinnaNotchFreq - lastHrtfNotchFreqHz) > 20f || lastHrtfSampleRate != srFloat) {
                 lastHrtfNotchFreqHz = pinnaNotchFreq
                 lastHrtfSampleRate = srFloat
                 for (ch in 0..1) {
                     hrtfPinnaNotchFilters[ch].setPeakingEq(srFloat, pinnaNotchFreq, 3.2f, -6.5f * spatInt)
                     hrtfConchaPeakFilters[ch].setPeakingEq(srFloat, 3800f, 1.5f, 3.2f * spatInt)
+                    eightDFrontPresenceFilters[ch].setPeakingEq(srFloat, 3450f, 1.35f, 3.8f * spatInt)
+                    eightDRearNotchFilters[ch].setPeakingEq(srFloat, 6800f, 2.6f, -7.2f * spatInt)
                 }
             }
         }
 
-        // Bass Exciter & Sub-Harmonic Synthesizer filter coefficients
+        // Bass Exciter, Sub-Harmonic Synthesizer & Binaural Head-Shadow filter coefficients
         val bassLpAlpha = (2.0 * PI * 125.0 / srFloat).toFloat().coerceIn(0.005f, 0.08f)
         val subLpAlpha = (2.0 * PI * 68.0 / srFloat).toFloat().coerceIn(0.003f, 0.05f)
+        val headShadowAlpha = (2.0 * PI * 1350.0 / srFloat).toFloat().coerceIn(0.04f, 0.34f)
+        val rearPinnaLpAlpha = (2.0 * PI * 2350.0 / srFloat).toFloat().coerceIn(0.08f, 0.48f)
+        val distAirLpAlpha = (2.0 * PI * 7200.0 / srFloat).toFloat().coerceIn(0.22f, 0.82f)
+        val surroundSubAnchorAlpha = (2.0 * PI * 145.0 / srFloat).toFloat().coerceIn(0.006f, 0.09f)
+        val surroundErLpAlpha = (2.0 * PI * 5600.0 / srFloat).toFloat().coerceIn(0.18f, 0.72f)
+        val surroundErHpAlpha = (2.0 * PI * 260.0 / srFloat).toFloat().coerceIn(0.01f, 0.14f)
 
         var sumSqL = 0f
         var sumSqR = 0f
@@ -879,10 +983,21 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
                 currentWetDryMix = max(targetMix, currentWetDryMix - mixStep)
             }
 
-            if (currentMasterGain < targetLinearMasterGain) {
-                currentMasterGain = min(targetLinearMasterGain, currentMasterGain + gainSlewStep)
-            } else if (currentMasterGain > targetLinearMasterGain) {
-                currentMasterGain = max(targetLinearMasterGain, currentMasterGain - gainSlewStep)
+            if (!eq.smoothTransitions) {
+                currentMasterGain = targetLinearMasterGain
+                currentPreampGain = targetLinearPreampGain
+            } else {
+                if (currentMasterGain < targetLinearMasterGain) {
+                    currentMasterGain = min(targetLinearMasterGain, currentMasterGain + gainSlewStep)
+                } else if (currentMasterGain > targetLinearMasterGain) {
+                    currentMasterGain = max(targetLinearMasterGain, currentMasterGain - gainSlewStep)
+                }
+
+                if (currentPreampGain < targetLinearPreampGain) {
+                    currentPreampGain = min(targetLinearPreampGain, currentPreampGain + gainSlewStep)
+                } else if (currentPreampGain > targetLinearPreampGain) {
+                    currentPreampGain = max(targetLinearPreampGain, currentPreampGain - gainSlewStep)
+                }
             }
 
             if (trackFadeEnvelope < 1.0f) {
@@ -1029,19 +1144,33 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
                 }
 
                 // =============================================================
-                // STAGE 4: Warm Analog Tape Saturation (Lo-Fi & Phonk)
+                // STAGE 4: Analog-Style Saturation, Soft Clipping & Tape Harmonic Coloration
                 // =============================================================
                 if (isLofiColorActive && (satAmount > 0.005f || softDistAmount > 0.005f)) {
-                    val totalDrive = (satAmount * 0.85f + softDistAmount * 0.70f).coerceIn(0f, 1.15f)
+                    val satDrive = (satAmount * 0.90f).coerceIn(0f, 1.10f)
+                    val clipDrive = (softDistAmount * 0.85f).coerceIn(0f, 0.95f)
                     if (qualityMode == AudioPlaybackQuality.MAXIMUM_AVAILABLE_QUALITY) {
                         val midL = (wetL + dcPrevOutput[0]) * 0.5f
                         val midR = (wetR + dcPrevOutput[1]) * 0.5f
-                        wetL = 0.5f * (warmTapeSaturate(midL, totalDrive) + warmTapeSaturate(wetL, totalDrive))
-                        wetR = 0.5f * (warmTapeSaturate(midR, totalDrive) + warmTapeSaturate(wetR, totalDrive))
+                        wetL = 0.5f * (warmTapeSaturate(midL, satDrive) + warmTapeSaturate(wetL, satDrive))
+                        wetR = 0.5f * (warmTapeSaturate(midR, satDrive) + warmTapeSaturate(wetR, satDrive))
                     } else {
-                        wetL = warmTapeSaturate(wetL, totalDrive)
-                        wetR = warmTapeSaturate(wetR, totalDrive)
+                        wetL = warmTapeSaturate(wetL, satDrive)
+                        wetR = warmTapeSaturate(wetR, satDrive)
                     }
+                    // Stage 4B: Asymmetric Tube/Diode Soft Clipping
+                    if (clipDrive > 0.005f) {
+                        wetL = asymmetricSoftClip(wetL, clipDrive)
+                        wetR = asymmetricSoftClip(wetR, clipDrive)
+                    }
+                    // Stage 4C: Magnetic Tape Hysteresis & 2nd/3rd Harmonic Coloration
+                    val hystMix = (satAmount * 0.24f + softDistAmount * 0.16f).coerceIn(0f, 0.34f)
+                    tapeHysteresisStateL += 0.38f * (wetL - tapeHysteresisStateL)
+                    tapeHysteresisStateR += 0.38f * (wetR - tapeHysteresisStateR)
+                    val thirdHarmL = wetL * wetL * wetL * 0.09f * satAmount
+                    val thirdHarmR = wetR * wetR * wetR * 0.09f * satAmount
+                    wetL = (wetL * (1.0f - hystMix * 0.35f) + tapeHysteresisStateL * hystMix * 0.35f - thirdHarmL)
+                    wetR = (wetR * (1.0f - hystMix * 0.35f) + tapeHysteresisStateR * hystMix * 0.35f - thirdHarmR)
                 }
 
                 // =============================================================
@@ -1261,62 +1390,148 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
                 }
 
                 // =============================================================
-                // STAGE 10: 8D Orbit, 3D Spatial Binaural HRTF & Ultra Surround
+                // STAGE 10: Genuine Binaural 8D Engine & Dedicated 3D Surround Engine
                 // =============================================================
                 when (mode) {
                     LiveSoundMode.EIGHT_D_ULTRA -> {
-                        // Continuous 360-degree binaural azimuth rotation + ITD delay + rear head shadow
-                        val azSin = sin(eightDPhase).toFloat() // -1 (Left) .. +1 (Right)
-                        val azCos = cos(eightDPhase).toFloat() // +1 (Front) .. -1 (Behind head)
-                        eightDPhase += eightDPhaseInc
-                        if (eightDPhase > 2.0 * PI) eightDPhase -= 2.0 * PI
+                        // PHASE 3: Genuine Binaural 8D Spatial Engine
+                        // 1. Continuous 360-degree CW/CCW orbit or Paused / Manual Direction Angle
+                        val effectiveAzRad = eightDPhase + eightDManualOffsetRad
+                        val targetSin = sin(effectiveAzRad).toFloat() // -1 (Left -90°) .. +1 (Right +90°)
+                        val targetCos = cos(effectiveAzRad).toFloat() // +1 (Front 0°) .. -1 (Rear ±180°)
+                        if (!lofiParams.eightDPauseMovement) {
+                            eightDPhase += eightDPhaseInc
+                            if (eightDPhase > PI) eightDPhase -= 2.0 * PI
+                            if (eightDPhase < -PI) eightDPhase += 2.0 * PI
+                        }
 
-                        spatialItdDelayLeft[spatialItdWriteIndex] = wetL
-                        spatialItdDelayRight[spatialItdWriteIndex] = wetR
+                        // Per-sample smooth unit-vector interpolation for click-free azimuth movement
+                        smoothedEightDSin += 0.008f * (targetSin - smoothedEightDSin)
+                        smoothedEightDCos += 0.008f * (targetCos - smoothedEightDCos)
+                        val azSin = smoothedEightDSin.coerceIn(-1f, 1f)
+                        val azCos = smoothedEightDCos.coerceIn(-1f, 1f)
 
-                        val maxItdSamples = 0.00068f * srFloat * spatInt
-                        val delayL = if (azSin > 0f) azSin * maxItdSamples else 0f
-                        val delayR = if (azSin < 0f) (-azSin) * maxItdSamples else 0f
+                        // 2. Preserve stereo width of source material while orbiting in 3D space
+                        val srcMid = (wetL + wetR) * 0.5f
+                        val srcSide = (wetL - wetR) * 0.5f
+                        val stereoOrbitInL = srcMid + srcSide * 0.58f
+                        val stereoOrbitInR = srcMid - srcSide * 0.58f
+
+                        spatialItdDelayLeft[spatialItdWriteIndex] = stereoOrbitInL
+                        spatialItdDelayRight[spatialItdWriteIndex] = stereoOrbitInR
+
+                        // 3. Woodworth Spherical-Head Interaural Time Difference (ITD)
+                        // Head radius a = 8.75cm, speed of sound c = 343m/s -> max ITD ~0.66ms at ±90°
+                        val absSin = abs(azSin)
+                        val woodworth = (absSin + asinfApprox(absSin)).coerceIn(0f, 2.5708f)
+                        val itdSamples = (0.000255f * woodworth * srFloat * spatInt).coerceIn(0f, 64f)
+
+                        // Contralateral ear receives the Woodworth acoustic path delay
+                        val delayL = if (azSin > 0f) itdSamples else 0f
+                        val delayR = if (azSin < 0f) itdSamples else 0f
 
                         val itdL = readFractionalDelay(
                             spatialItdDelayLeft,
                             spatialItdWriteIndex,
                             spatialItdDelaySize,
                             spatialItdDelayMask,
-                            delayL + 1f
+                            delayL + 1.0f
                         )
                         val itdR = readFractionalDelay(
                             spatialItdDelayRight,
                             spatialItdWriteIndex,
                             spatialItdDelaySize,
                             spatialItdDelayMask,
-                            delayR + 1f
+                            delayR + 1.0f
                         )
+
+                        // 4. 4-Tap Binaural Room Early Reflection Halo for Externalization & Movement Depth
+                        val erScale = (0.08f + 0.18f * eightDDepth) * spatInt
+                        val erTap1 = (0.0117f * srFloat).coerceIn(8f, (spatialItdDelaySize - 8).toFloat())
+                        val erTap2 = (0.0179f * srFloat).coerceIn(16f, (spatialItdDelaySize - 8).toFloat())
+                        val erTap3 = (0.0263f * srFloat).coerceIn(24f, (spatialItdDelaySize - 8).toFloat())
+                        val erTap4 = (0.0349f * srFloat).coerceIn(32f, (spatialItdDelaySize - 8).toFloat())
+
+                        val haloL = (
+                            readFractionalDelay(spatialItdDelayRight, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, erTap1) * 0.44f -
+                                readFractionalDelay(spatialItdDelayLeft, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, erTap2) * 0.30f +
+                                readFractionalDelay(spatialItdDelayRight, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, erTap3) * 0.18f -
+                                readFractionalDelay(spatialItdDelayLeft, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, erTap4) * 0.11f
+                            ) * erScale
+                        val haloR = (
+                            readFractionalDelay(spatialItdDelayLeft, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, erTap1) * 0.44f -
+                                readFractionalDelay(spatialItdDelayRight, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, erTap2) * 0.30f +
+                                readFractionalDelay(spatialItdDelayLeft, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, erTap3) * 0.18f -
+                                readFractionalDelay(spatialItdDelayRight, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, erTap4) * 0.11f
+                            ) * erScale
+
                         spatialItdWriteIndex = (spatialItdWriteIndex + 1) and spatialItdDelayMask
 
-                        // Wide constant-power stereo orbit with natural cross-feed
-                        val monoSum = (itdL + itdR) * 0.5f
-                        val stereoSide = (itdL - itdR) * 0.5f
-                        val panAngle = ((azSin * 0.90f * spatInt + 1.0f) * 0.25f * PI).toFloat()
-                        val leftPan = cos(panAngle)
-                        val rightPan = sin(panAngle)
+                        // 5. Frequency-Dependent Head-Shadow ILD (Low frequencies < 1.35kHz diffract around the head;
+                        // High frequencies > 1.35kHz are strongly shadowed at the contralateral ear)
+                        val crossMixL = itdL * 0.82f + itdR * 0.18f
+                        val crossMixR = itdR * 0.82f + itdL * 0.18f
+                        eightDContralateralLpL += headShadowAlpha * (crossMixL - eightDContralateralLpL)
+                        eightDContralateralLpR += headShadowAlpha * (crossMixR - eightDContralateralLpR)
 
-                        var pannedL = (monoSum * 0.78f + stereoSide * 0.35f) * leftPan * 1.38f + itdR * 0.08f
-                        var pannedR = (monoSum * 0.78f - stereoSide * 0.35f) * rightPan * 1.38f + itdL * 0.08f
+                        val lowBandL = eightDContralateralLpL
+                        val highBandL = crossMixL - lowBandL
+                        val lowBandR = eightDContralateralLpR
+                        val highBandR = crossMixR - lowBandR
 
-                        // Rear-hemisphere acoustic head shadow when source passes behind listener (azCos < 0)
-                        val rearFactor = ((-azCos).coerceIn(0f, 1f)) * 0.58f * spatInt
-                        hrtfShadowLeftState += (1f - rearFactor) * (pannedL - hrtfShadowLeftState)
-                        hrtfShadowRightState += (1f - rearFactor) * (pannedR - hrtfShadowRightState)
+                        // rightNess > 0 means source is on Right -> Left ear is contralateral (shadowed)
+                        // leftNess > 0 means source is on Left -> Right ear is contralateral (shadowed)
+                        val rightNess = azSin.coerceIn(0f, 1f) * spatInt
+                        val leftNess = (-azSin).coerceIn(0f, 1f) * spatInt
 
-                        wetL = hrtfShadowLeftState
-                        wetR = hrtfShadowRightState
+                        val ipsiGainL = 1.0f + 0.24f * leftNess
+                        val ipsiGainR = 1.0f + 0.24f * rightNess
+                        val contraLowGainL = 1.0f - 0.28f * rightNess
+                        val contraHighGainL = 1.0f - 0.78f * rightNess
+                        val contraLowGainR = 1.0f - 0.28f * leftNess
+                        val contraHighGainR = 1.0f - 0.78f * leftNess
+
+                        var binauralL = (lowBandL * contraLowGainL + highBandL * contraHighGainL) * ipsiGainL
+                        var binauralR = (lowBandR * contraLowGainR + highBandR * contraHighGainR) * ipsiGainR
+
+                        // 6. Front vs. Rear Pinna Spectral Cues (solves front/back cone of confusion)
+                        // Front hemisphere (azCos > 0): outer ear concha resonance boost at 3.45 kHz
+                        // Rear hemisphere (azCos < 0): pinna acoustic shadow above 2.35 kHz + 6.8 kHz pinna notch
+                        val frontFactor = azCos.coerceIn(0f, 1f) * spatInt
+                        val rearFactor = (-azCos).coerceIn(0f, 1f) * spatInt
+
+                        val frontEnhancedL = eightDFrontPresenceFilters[0].process(binauralL)
+                        val frontEnhancedR = eightDFrontPresenceFilters[1].process(binauralR)
+                        binauralL = binauralL * (1.0f - frontFactor * 0.65f) + frontEnhancedL * (frontFactor * 0.65f)
+                        binauralR = binauralR * (1.0f - frontFactor * 0.65f) + frontEnhancedR * (frontFactor * 0.65f)
+
+                        eightDPinnaRearLpL += rearPinnaLpAlpha * (binauralL - eightDPinnaRearLpL)
+                        eightDPinnaRearLpR += rearPinnaLpAlpha * (binauralR - eightDPinnaRearLpR)
+                        val rearNotchedL = eightDRearNotchFilters[0].process(eightDPinnaRearLpL * 0.72f + binauralL * 0.28f)
+                        val rearNotchedR = eightDRearNotchFilters[1].process(eightDPinnaRearLpR * 0.72f + binauralR * 0.28f)
+                        binauralL = binauralL * (1.0f - rearFactor * 0.78f) + rearNotchedL * (rearFactor * 0.78f)
+                        binauralR = binauralR * (1.0f - rearFactor * 0.78f) + rearNotchedR * (rearFactor * 0.78f)
+
+                        // 7. Elevation Pinna Notch & Distance Air Absorption
+                        if (abs(lofiParams.spatialElevationDeg) > 1.0f) {
+                            binauralL = hrtfPinnaNotchFilters[0].process(binauralL)
+                            binauralR = hrtfPinnaNotchFilters[1].process(binauralR)
+                        }
+                        eightDDistAirLpL += distAirLpAlpha * (binauralL - eightDDistAirLpL)
+                        eightDDistAirLpR += distAirLpAlpha * (binauralR - eightDDistAirLpR)
+                        val airAbsorbMix = (eightDDepth * 0.34f * (1.0f - 0.25f * azCos)).coerceIn(0f, 0.42f)
+                        val distGain = 1.0f - eightDDepth * 0.14f + 0.05f * azCos * spatInt
+
+                        wetL = ((binauralL * (1.0f - airAbsorbMix) + eightDDistAirLpL * airAbsorbMix) * distGain + haloL) * 1.06f
+                        wetR = ((binauralR * (1.0f - airAbsorbMix) + eightDDistAirLpR * airAbsorbMix) * distGain + haloR) * 1.06f
                     }
 
                     LiveSoundMode.THREE_D_SPATIAL -> {
-                        // Parametric Binaural HRTF (Woodworth Spherical-Head ITD + Head-Shadow ILD + Pinna Notch + Early Reflections)
+                        // PHASE 4A: Parametric Binaural HRTF + 3D Surround Sound Engine (Completely Separate from 8D Orbit)
+                        // Combines Woodworth Spherical-Head ITD & Head-Shadow ILD (when azimuth/orbit is active)
+                        // with Sub-Bass Mono Anchoring, Center Vocal Focus, Quadrature All-Pass Decorrelation,
+                        // Binaural Virtual Speaker Width, and 4-Tap Band-Limited Early Reflections.
                         val azRad = if (lofiParams.spatialAutoOrbit) {
-                            // Smooth frontal 3D stage arc (±42 deg) distinct from 8D's full 360 spin
                             val p = (sin(spatialOrbitPhase) * (PI * 0.24)).toFloat()
                             spatialOrbitPhase += spatialOrbitPhaseInc
                             if (spatialOrbitPhase > 2.0 * PI) spatialOrbitPhase -= 2.0 * PI
@@ -1324,15 +1539,57 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
                         } else {
                             (lofiParams.spatialAzimuthDeg.coerceIn(-180f, 180f) * (PI / 180.0)).toFloat()
                         }
-
                         val sinAz = sin(azRad)
                         val absSinAz = abs(sinAz)
                         val woodworthFactor = (absSinAz + asinfApprox(absSinAz)).coerceIn(0f, 2.57f)
-                        val itdSec = 0.000254f * woodworthFactor * spatInt
-                        val itdSamples = (itdSec * srFloat).coerceIn(0f, 48f)
+                        val itdSamples = (0.000254f * woodworthFactor * spatInt * srFloat).coerceIn(0f, 48f)
 
-                        spatialItdDelayLeft[spatialItdWriteIndex] = wetL
-                        spatialItdDelayRight[spatialItdWriteIndex] = wetR
+                        val rawMid = (wetL + wetR) * 0.5f
+                        val rawSide = (wetL - wetR) * 0.5f
+
+                        // 1. Sub-Bass (<145 Hz) Mono Anchoring for tight, phase-coherent bass
+                        surroundSubBassLpMid += surroundSubAnchorAlpha * (rawMid - surroundSubBassLpMid)
+                        val subBassMono = surroundSubBassLpMid
+                        val midHighs = rawMid - subBassMono
+
+                        val hpSide = rawSide - surroundSideHpPrevIn + 0.976f * surroundSideHpPrevOut
+                        surroundSideHpPrevIn = rawSide
+                        surroundSideHpPrevOut = hpSide
+
+                        // 2. Center Vocal Focus (preserves natural lead vocal clarity)
+                        val centerVocalGain = 0.76f + 0.36f * surroundCenterFocusVal
+                        val focusedMid = subBassMono * 1.04f + midHighs * centerVocalGain
+
+                        // 3. Quadrature 1st-Order All-Pass Stereo Decorrelation
+                        val ap1CoeffL = 0.38f
+                        val ap1OutL = ap1CoeffL * wetL + surroundAp1InL - ap1CoeffL * surroundAp1OutL
+                        surroundAp1InL = wetL
+                        surroundAp1OutL = ap1OutL
+
+                        val ap2CoeffL = -0.24f
+                        val ap2OutL = ap2CoeffL * ap1OutL + surroundAp2InL - ap2CoeffL * surroundAp2OutL
+                        surroundAp2InL = ap1OutL
+                        surroundAp2OutL = ap2OutL
+
+                        val ap1CoeffR = 0.54f
+                        val ap1OutR = ap1CoeffR * wetR + surroundAp1InR - ap1CoeffR * surroundAp1OutR
+                        surroundAp1InR = wetR
+                        surroundAp1OutR = ap1OutR
+
+                        val ap2CoeffR = -0.36f
+                        val ap2OutR = ap2CoeffR * ap1OutR + surroundAp2InR - ap2CoeffR * surroundAp2OutR
+                        surroundAp2InR = ap1OutR
+                        surroundAp2OutR = ap2OutR
+
+                        val decorrelatedDiff = (ap2OutL - ap2OutR) * 0.35f * spatInt
+                        val widthScale = 1.0f + (surroundWidthVal - 1.0f) * spatInt
+                        val expandedSide = hpSide * widthScale + decorrelatedDiff * (0.45f * surroundWidthVal)
+
+                        val stageInL = focusedMid + expandedSide
+                        val stageInR = focusedMid - expandedSide
+
+                        spatialItdDelayLeft[spatialItdWriteIndex] = stageInL
+                        spatialItdDelayRight[spatialItdWriteIndex] = stageInR
 
                         val earDelayL = if (sinAz > 0f) itdSamples else 0f
                         val earDelayR = if (sinAz < 0f) itdSamples else 0f
@@ -1352,56 +1609,82 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
                             earDelayR + 1f
                         )
 
-                        // Early lateral room reflections (11.3ms & 18.7ms stereo reflection taps)
-                        val er1 = (0.0113f * srFloat).coerceIn(8f, (spatialItdDelaySize - 8).toFloat())
-                        val er2 = (0.0187f * srFloat).coerceIn(16f, (spatialItdDelaySize - 8).toFloat())
-                        val reflL = readFractionalDelay(spatialItdDelayRight, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er1) * 0.16f -
-                            readFractionalDelay(spatialItdDelayLeft, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er2) * 0.10f
-                        val reflR = readFractionalDelay(spatialItdDelayLeft, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er1) * 0.16f -
-                            readFractionalDelay(spatialItdDelayRight, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er2) * 0.10f
+                        // 4. Controlled 4-Tap Acoustic Early Reflections for Depth Perception
+                        val er1 = (0.0079f * srFloat).coerceIn(6f, (spatialItdDelaySize - 8).toFloat())
+                        val er2 = (0.0127f * srFloat).coerceIn(12f, (spatialItdDelaySize - 8).toFloat())
+                        val er3 = (0.0183f * srFloat).coerceIn(18f, (spatialItdDelaySize - 8).toFloat())
+                        val er4 = (0.0247f * srFloat).coerceIn(24f, (spatialItdDelaySize - 8).toFloat())
+
+                        val rawErL = readFractionalDelay(spatialItdDelayRight, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er1) * 0.45f -
+                            readFractionalDelay(spatialItdDelayLeft, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er2) * 0.32f +
+                            readFractionalDelay(spatialItdDelayRight, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er3) * 0.22f -
+                            readFractionalDelay(spatialItdDelayLeft, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er4) * 0.14f
+
+                        val rawErR = readFractionalDelay(spatialItdDelayLeft, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er1) * 0.45f -
+                            readFractionalDelay(spatialItdDelayRight, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er2) * 0.32f +
+                            readFractionalDelay(spatialItdDelayLeft, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er3) * 0.22f -
+                            readFractionalDelay(spatialItdDelayRight, spatialItdWriteIndex, spatialItdDelaySize, spatialItdDelayMask, er4) * 0.14f
 
                         spatialItdWriteIndex = (spatialItdWriteIndex + 1) and spatialItdDelayMask
 
-                        // Frequency-dependent head-shadow ILD at contralateral ear
-                        val shadowAlpha = (2.0 * PI * 1500.0 / srFloat).toFloat().coerceIn(0.05f, 0.35f)
-                        hrtfShadowLeftState += shadowAlpha * (binauralL - hrtfShadowLeftState)
-                        hrtfShadowRightState += shadowAlpha * (binauralR - hrtfShadowRightState)
+                        surroundErLpL += surroundErLpAlpha * (rawErL - surroundErLpL)
+                        surroundErLpR += surroundErLpAlpha * (rawErR - surroundErLpR)
+                        surroundErHpL += surroundErHpAlpha * (surroundErLpL - surroundErHpL)
+                        surroundErHpR += surroundErHpAlpha * (surroundErLpR - surroundErHpR)
+                        val bandLimitedErL = (surroundErLpL - surroundErHpL) * surroundDepthVal * spatInt * 0.40f
+                        val bandLimitedErR = (surroundErLpR - surroundErHpR) * surroundDepthVal * spatInt * 0.40f
+
+                        // 5. Frequency-dependent head-shadow ILD at contralateral ear
+                        hrtfShadowLeftState += headShadowAlpha * (binauralL - hrtfShadowLeftState)
+                        hrtfShadowRightState += headShadowAlpha * (binauralR - hrtfShadowRightState)
 
                         val contraRight = sinAz.coerceIn(0f, 1f) * spatInt
                         val contraLeft = (-sinAz).coerceIn(0f, 1f) * spatInt
 
-                        binauralL = binauralL * (1f - 0.58f * contraRight) + hrtfShadowLeftState * (0.28f * contraRight)
-                        binauralR = binauralR * (1f - 0.58f * contraLeft) + hrtfShadowRightState * (0.28f * contraLeft)
+                        binauralL = binauralL * (1f - 0.58f * contraRight) + hrtfShadowLeftState * (0.26f * contraRight)
+                        binauralR = binauralR * (1f - 0.58f * contraLeft) + hrtfShadowRightState * (0.26f * contraLeft)
 
-                        val distAtten = (1.0f - lofiParams.spatialDistance.coerceIn(0f, 1f) * 0.20f)
-                        binauralL = hrtfConchaPeakFilters[0].process(hrtfPinnaNotchFilters[0].process(binauralL)) * distAtten + reflL * spatInt
-                        binauralR = hrtfConchaPeakFilters[1].process(hrtfPinnaNotchFilters[1].process(binauralR)) * distAtten + reflR * spatInt
+                        val distAtten = 1.0f - lofiParams.spatialDistance.coerceIn(0f, 1f) * 0.16f
+                        val surroundNorm = 1.0f / max(1.0f, 0.74f + 0.26f * widthScale + 0.10f * surroundDepthVal)
+                        binauralL = (hrtfConchaPeakFilters[0].process(hrtfPinnaNotchFilters[0].process(binauralL)) * distAtten + bandLimitedErL) * surroundNorm
+                        binauralR = (hrtfConchaPeakFilters[1].process(hrtfPinnaNotchFilters[1].process(binauralR)) * distAtten + bandLimitedErR) * surroundNorm
 
                         wetL = binauralL
                         wetR = binauralR
                     }
 
                     LiveSoundMode.ULTRA_SURROUND -> {
-                        // High-passed Side (>180Hz) Mid/Side expansion + Haas decorrelation
-                        val mid = (wetL + wetR) * 0.5f
+                        // PHASE 4B: Ultra-Wide Cinema M/S Surround + Dual-Tap Haas Decorrelation & Center Focus
+                        val rawMid = (wetL + wetR) * 0.5f
                         val rawSide = (wetL - wetR) * 0.5f
                         val hpSide = rawSide - surroundSideHpPrevIn + 0.974f * surroundSideHpPrevOut
                         surroundSideHpPrevIn = rawSide
                         surroundSideHpPrevOut = hpSide
 
                         spatialItdDelayLeft[spatialItdWriteIndex] = hpSide
-                        val haasTap = readFractionalDelay(
+                        spatialItdDelayRight[spatialItdWriteIndex] = rawMid
+                        val haasTap1 = readFractionalDelay(
                             spatialItdDelayLeft,
                             spatialItdWriteIndex,
                             spatialItdDelaySize,
                             spatialItdDelayMask,
                             (0.0068f * srFloat).coerceIn(4f, 512f)
                         )
+                        val haasTap2 = readFractionalDelay(
+                            spatialItdDelayRight,
+                            spatialItdWriteIndex,
+                            spatialItdDelaySize,
+                            spatialItdDelayMask,
+                            (0.0142f * srFloat).coerceIn(8f, 1024f)
+                        )
                         spatialItdWriteIndex = (spatialItdWriteIndex + 1) and spatialItdDelayMask
 
-                        val wideSide = hpSide * (1.0f + 0.68f * spatInt) + haasTap * 0.24f * spatInt
-                        wetL = (mid + wideSide) * 0.93f
-                        wetR = (mid - wideSide) * 0.93f
+                        val focusedMid = rawMid * (0.82f + 0.24f * surroundCenterFocusVal)
+                        val wideSide = hpSide * (1.0f + 0.68f * spatInt * (surroundWidthVal / 1.38f)) +
+                            haasTap1 * 0.24f * spatInt +
+                            haasTap2 * 0.14f * surroundDepthVal * spatInt
+                        wetL = (focusedMid + wideSide) * 0.92f
+                        wetR = (focusedMid - wideSide) * 0.92f
                     }
 
                     else -> {
@@ -1445,6 +1728,30 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
             var finalL = dryL * (1.0f - currentWetDryMix) + wetL * currentWetDryMix
             var finalR = dryR * (1.0f - currentWetDryMix) + wetR * currentWetDryMix
 
+            // When in Normal/Original mode (wet mix inactive), still execute active EQ Bass/Sub-Bass/Mid/Treble shelves
+            if (currentWetDryMix <= 0.0001f && eq.isEnabled && eq.audioEnhancementEnabled) {
+                if (isSubBassShelfActive) {
+                    finalL = subBassShelfFilters[0].process(finalL)
+                    finalR = subBassShelfFilters[1].process(finalR)
+                }
+                if (isBassShelfActive) {
+                    finalL = bassShelfFilters[0].process(finalL)
+                    finalR = bassShelfFilters[1].process(finalR)
+                }
+                if (isMidPeakActive) {
+                    finalL = midrangePeakFilters[0].process(finalL)
+                    finalR = midrangePeakFilters[1].process(finalR)
+                }
+                if (isVocalClarityActive) {
+                    finalL = vocalPresenceFilters[0].process(vocalMudCutFilters[0].process(finalL))
+                    finalR = vocalPresenceFilters[1].process(vocalMudCutFilters[1].process(finalR))
+                }
+                if (isHighShelfActive) {
+                    finalL = highShelfFilters[0].process(finalL)
+                    finalR = highShelfFilters[1].process(finalR)
+                }
+            }
+
             // Execute ONLY active Equalizer bands (skips all 0.0 dB bands)
             for (i in 0 until activeEqBandCount) {
                 val b = activeEqBandIndices[i]
@@ -1452,24 +1759,95 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
                 finalR = eqFilters[1][b].process(finalR)
             }
 
-            // Apply slewed Master Gain, Stereo Balance & Fade Envelope
-            finalL *= currentMasterGain * leftChannelTrim * trackFadeEnvelope
-            finalR *= currentMasterGain * rightChannelTrim * trackFadeEnvelope
+            // Phase 8: Dedicated Low-Frequency Compression & Harmonic Bass Enhancement (with Vocal Clarity Protection)
+            if (enhHarmonicDrive > 0.005f || enhLowFreqComp > 0.005f) {
+                enhLowLpL += bassLpAlpha * (finalL - enhLowLpL)
+                enhLowLpR += bassLpAlpha * (finalR - enhLowLpR)
+                val highBandL = finalL - enhLowLpL
+                val highBandR = finalR - enhLowLpR
+
+                var processedLowL = enhLowLpL
+                var processedLowR = enhLowLpR
+
+                // Controlled Low-Frequency Compressor (<125 Hz only so vocals never pump)
+                if (enhLowFreqComp > 0.005f) {
+                    val lowPeak = max(abs(processedLowL), abs(processedLowR))
+                    val cAlpha = if (lowPeak > enhLowCompEnv) 0.015f else 0.0012f
+                    enhLowCompEnv += cAlpha * (lowPeak - enhLowCompEnv)
+                    val lfThreshold = 0.30f
+                    if (enhLowCompEnv > lfThreshold) {
+                        val excess = enhLowCompEnv - lfThreshold
+                        val lfGr = 1.0f / (1.0f + excess * enhLowFreqComp * 2.4f)
+                        processedLowL *= lfGr
+                        processedLowR *= lfGr
+                    }
+                }
+
+                // Warm Low-Frequency Harmonic Enhancer (2nd/3rd harmonics with headroom compensation)
+                if (enhHarmonicDrive > 0.005f) {
+                    val driveL = processedLowL * (1.0f + enhHarmonicDrive * 1.8f)
+                    val driveR = processedLowR * (1.0f + enhHarmonicDrive * 1.8f)
+                    val harmL = asymmetricSoftClip(driveL, enhHarmonicDrive * 0.75f) - processedLowL
+                    val harmR = asymmetricSoftClip(driveR, enhHarmonicDrive * 0.75f) - processedLowR
+                    processedLowL = (processedLowL + harmL * 0.55f) * (1.0f - enhHarmonicDrive * 0.12f)
+                    processedLowR = (processedLowR + harmR * 0.55f) * (1.0f - enhHarmonicDrive * 0.12f)
+                }
+
+                finalL = processedLowL + highBandL
+                finalR = processedLowR + highBandR
+            }
+
+            // Phase 9: Master Stereo Width Control (0.0 Mono .. 1.0 Original .. 2.0 Wide Stereo)
+            if (abs(masterWidth - 1.0f) > 0.005f && chCount == 2) {
+                val m = (finalL + finalR) * 0.5f
+                val s = (finalL - finalR) * 0.5f * masterWidth
+                val widthNorm = 1.0f / max(1.0f, 0.5f + 0.5f * masterWidth * 0.85f)
+                finalL = (m + s) * widthNorm
+                finalR = (m - s) * widthNorm
+            }
+
+            // Phase 9: Master Dynamic Range Control (DRC)
+            if (drcAmount > 0.005f) {
+                val frameRms = sqrt((finalL * finalL + finalR * finalR) * 0.5f)
+                val drcCoeff = if (frameRms > drcEnvelope) 0.010f else 0.0008f
+                drcEnvelope += drcCoeff * (frameRms - drcEnvelope)
+                val drcThreshold = 0.34f
+                val drcMakeup = 1.0f + drcAmount * 0.16f
+                if (drcEnvelope > drcThreshold) {
+                    val excess = drcEnvelope - drcThreshold
+                    val drcGr = 1.0f / (1.0f + excess * drcAmount * 2.2f)
+                    finalL *= drcGr * drcMakeup
+                    finalR *= drcGr * drcMakeup
+                } else {
+                    finalL *= drcMakeup
+                    finalR *= drcMakeup
+                }
+            }
+
+            // Apply slewed Master Gain, Preamp Gain, Stereo Balance & Fade Envelope
+            val combinedOutputGain = currentMasterGain * currentPreampGain * trackFadeEnvelope
+            finalL *= combinedOutputGain * leftChannelTrim
+            finalR *= combinedOutputGain * rightChannelTrim
 
             // =================================================================
             // STAGE 12: Envelope-Tracked True-Peak Limiter (-0.3 dBFS Ceiling)
             // =================================================================
-            val ceiling = 0.965f
-            val currentPeak = max(abs(finalL), abs(finalR))
-            val targetLimiterGain = if (currentPeak > ceiling) ceiling / currentPeak else 1.0f
-            if (targetLimiterGain < limiterGainEnvelope) {
-                limiterGainEnvelope = targetLimiterGain
-            } else {
-                limiterGainEnvelope += 0.0008f * (1.0f - limiterGainEnvelope)
-            }
+            if (eq.outputLimiterEnabled) {
+                val ceiling = 0.965f
+                val currentPeak = max(abs(finalL), abs(finalR))
+                val targetLimiterGain = if (currentPeak > ceiling) ceiling / currentPeak else 1.0f
+                if (targetLimiterGain < limiterGainEnvelope) {
+                    limiterGainEnvelope = targetLimiterGain
+                } else {
+                    limiterGainEnvelope += 0.0008f * (1.0f - limiterGainEnvelope)
+                }
 
-            finalL = softKneeCeiling(finalL * limiterGainEnvelope)
-            finalR = softKneeCeiling(finalR * limiterGainEnvelope)
+                finalL = softKneeCeiling(finalL * limiterGainEnvelope)
+                finalR = softKneeCeiling(finalR * limiterGainEnvelope)
+            } else {
+                finalL = finalL.coerceIn(-0.999f, 0.999f)
+                finalR = finalR.coerceIn(-0.999f, 0.999f)
+            }
 
             if (qualityMode == AudioPlaybackQuality.MAXIMUM_AVAILABLE_QUALITY && isDspActive) {
                 val tpdfDither = (nextWhiteNoise() - nextWhiteNoise()) * (0.25f / 32768.0f)
@@ -1610,6 +1988,20 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
         return shaped * norm
     }
 
+    private fun asymmetricSoftClip(x: Float, amount: Float): Float {
+        if (amount <= 0.001f) return x
+        val drive = 1.0f + amount * 1.35f
+        val u = (x * drive).coerceIn(-2.5f, 2.5f)
+        // Smooth cubic-rational soft clipper with subtle positive/negative asymmetry (even-order warmth)
+        val clipped = if (u >= 0f) {
+            u / (1.0f + 0.38f * u * u)
+        } else {
+            u / (1.0f + 0.44f * u * u)
+        }
+        val norm = 1.0f / (1.0f + amount * 0.28f)
+        return clipped * norm
+    }
+
     private fun softKneeCeiling(x: Float): Float {
         val absX = abs(x)
         val kneeStart = 0.90f
@@ -1711,12 +2103,16 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
             modeFilter3[ch].reset()
             hrtfPinnaNotchFilters[ch].reset()
             hrtfConchaPeakFilters[ch].reset()
+            eightDFrontPresenceFilters[ch].reset()
+            eightDRearNotchFilters[ch].reset()
             for (b in 0 until 10) {
                 eqFilters[ch][b].reset()
             }
             dcPrevInput[ch] = 0f
             dcPrevOutput[ch] = 0f
         }
+        tapeHysteresisStateL = 0f
+        tapeHysteresisStateR = 0f
         bassLowPassLeft = 0f
         bassLowPassRight = 0f
         subSynthLpLeft = 0f
@@ -1727,10 +2123,34 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
         spatialItdDelayLeft.fill(0f)
         spatialItdDelayRight.fill(0f)
         spatialItdWriteIndex = 0
+        eightDPhase = 0.0
+        smoothedEightDSin = 0.0f
+        smoothedEightDCos = 1.0f
+        eightDIpsilateralLpL = 0f
+        eightDIpsilateralLpR = 0f
+        eightDContralateralLpL = 0f
+        eightDContralateralLpR = 0f
+        eightDPinnaRearLpL = 0f
+        eightDPinnaRearLpR = 0f
+        eightDDistAirLpL = 0f
+        eightDDistAirLpR = 0f
         hrtfShadowLeftState = 0f
         hrtfShadowRightState = 0f
         surroundSideHpPrevIn = 0f
         surroundSideHpPrevOut = 0f
+        surroundSubBassLpMid = 0f
+        surroundAp1InL = 0f
+        surroundAp1OutL = 0f
+        surroundAp2InL = 0f
+        surroundAp2OutL = 0f
+        surroundAp1InR = 0f
+        surroundAp1OutR = 0f
+        surroundAp2InR = 0f
+        surroundAp2OutR = 0f
+        surroundErLpL = 0f
+        surroundErLpR = 0f
+        surroundErHpL = 0f
+        surroundErHpR = 0f
         reverbPreDelayLeft.fill(0f)
         reverbPreDelayRight.fill(0f)
         reverbPreDelayWriteIdx = 0
@@ -1755,6 +2175,14 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
         }
         compressorEnvelope = 0f
         limiterGainEnvelope = 1.0f
+        enhLowLpL = 0f
+        enhLowLpR = 0f
+        enhLowCompEnv = 0f
+        drcEnvelope = 0f
+        if (!currentEqState.smoothTransitions) {
+            currentMasterGain = 1.0f
+            currentPreampGain = 1.0f
+        }
         trackFadeEnvelope = if (currentEqState.fadeInOutMs > 0 && currentEqState.smoothTransitions) 0.0f else 1.0f
         lastClippingCount = 0
     }
@@ -1763,6 +2191,7 @@ class LofiDspAudioProcessor : BaseAudioProcessor() {
         onFlush()
         currentWetDryMix = 1.0f
         currentMasterGain = 1.0f
+        currentPreampGain = 1.0f
         smoothedLowPassHz = 8800f
         lastComputedLowPassHz = -1f
         totalUnderrunCount = 0

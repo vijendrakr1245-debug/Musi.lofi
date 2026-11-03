@@ -472,7 +472,8 @@ fun LofiWaveAppRoot(viewModel: LofiWaveViewModel) {
                                 onUpdateBand = { idx, gain -> viewModel.updateEqBand(idx, gain) },
                                 onSelectBuiltInPreset = { name, gains -> viewModel.selectBuiltInEqPreset(name, gains) },
                                 onSaveCustomEqPreset = { name -> viewModel.saveCustomEqPreset(name) },
-                                onApplyBassEnhancementPreset = { presetId -> viewModel.applyQuickBassEnhancementPreset(presetId) }
+                                onApplyBassEnhancementPreset = { presetId -> viewModel.applyQuickBassEnhancementPreset(presetId) },
+                                onResetAllEffects = { viewModel.resetAudioEditorToDefault() }
                             )
                         }
                         LofiNavTab.MUSIC_MOOD -> {
